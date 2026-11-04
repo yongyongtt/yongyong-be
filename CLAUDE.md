@@ -92,7 +92,7 @@ yongin은 다른 백엔드 팀원이 Python으로 적재하는 분석 DB다. **S
 - 타입: `text` → String, `double` → Double, `bigint` → Long, `tinyint(1)` → Boolean.
 - 전체 테이블·컬럼 정의는 `docs/database.md`(있으면) 또는 사용자에게 묻는다. 모르는 컬럼 의미를 추측하지 않는다.
 
-### 연결 확인용 API (하나만)
+### 코드 목록 API (보류, 프론트에서 필요할 때 만든다)
 
 - `GET /api/meta/codes`: 행정동 38개와 각 행정동에 속한 리 목록, 교통수단 3종을 내린다.
   ```json
@@ -131,6 +131,8 @@ yongin은 다른 백엔드 팀원이 Python으로 적재하는 분석 DB다. **S
 | REGION_NOT_FOUND | 404 | 존재하지 않는 지역입니다. |
 | SUITABILITY_NOT_READY | 404 | 적합성 평가 결과가 아직 없습니다. |
 | RECOMMENDATION_NOT_FOUND | 404 | 생성된 AI 추천이 없습니다. |
+| RESOURCE_NOT_FOUND | 404 | 요청한 경로를 찾을 수 없습니다. |
+| METHOD_NOT_ALLOWED | 405 | 지원하지 않는 HTTP 메서드입니다. |
 | INTERNAL_ERROR | 500 | 서버 오류가 발생했습니다. |
 
 - `ErrorCode` enum에 HTTP 상태와 한국어 메시지를 같이 둔다. 새 에러는 여기에 추가한다.
@@ -142,7 +144,8 @@ yongin은 다른 백엔드 팀원이 Python으로 적재하는 분석 DB다. **S
 | --- | --- |
 | BusinessException | ErrorCode의 HTTP 상태 + 코드 |
 | MethodArgumentNotValidException, ConstraintViolationException, MissingServletRequestParameterException, MethodArgumentTypeMismatchException, HttpMessageNotReadableException | 400 INVALID_REQUEST |
-| NoResourceFoundException (없는 경로) | 404 |
+| NoResourceFoundException (없는 경로) | 404 RESOURCE_NOT_FOUND |
+| HttpRequestMethodNotSupportedException | 405 METHOD_NOT_ALLOWED |
 | 그 외 Exception | 500 INTERNAL_ERROR (로그는 error 레벨로 남기고, 응답에는 내부 메시지를 노출하지 않음) |
 
 ### CORS
@@ -158,7 +161,7 @@ yongin은 다른 백엔드 팀원이 Python으로 적재하는 분석 DB다. **S
 
 - 작업이 끝나면 `./gradlew build`로 컴파일과 테스트를 확인한다.
 - DB가 필요한 테스트 때문에 DB 없이 `build`가 깨지면 안 된다. 기본 생성된 `contextLoads` 테스트가 DB 때문에 실패하면 사용자에게 알리고 처리 방법을 묻는다.
-- 실행 확인: `./gradlew bootRun` → `/swagger-ui.html`에서 `GET /api/meta/codes` 호출 → 행정동 38개.
+- 실행 확인: `./gradlew bootRun` → `/swagger-ui.html`에서 API 호출.
 
 ## 작업 기록 (WORKLOG.md)
 
