@@ -160,8 +160,14 @@ yongin은 다른 백엔드 팀원이 Python으로 적재하는 분석 DB다. **S
 ## 검증
 
 - 작업이 끝나면 `./gradlew build`로 컴파일과 테스트를 확인한다.
-- DB가 필요한 테스트 때문에 DB 없이 `build`가 깨지면 안 된다. 기본 생성된 `contextLoads` 테스트가 DB 때문에 실패하면 사용자에게 알리고 처리 방법을 묻는다.
+- `./gradlew build`의 테스트(`YongyongApplicationTests`, `DatabaseConnectionTest`)에는 DB와 `.env`가 필요하다. DB 없는 환경에서는 `./gradlew build -x test`로 빌드한다.
 - 실행 확인: `./gradlew bootRun` → `/swagger-ui.html`에서 API 호출.
+
+## 배포 전 확인 사항
+
+- 빌드: DB에 접속할 수 없는 곳에서는 `./gradlew build -x test`로 빌드한다.
+- `.env`: 실행 폴더 기준으로 찾으므로 jar를 실행하는 폴더에 둔다. 없으면 `DB_PASSWORD`를 못 찾아 앱이 시작되지 않는다.
+- DB 주소: URL이 `localhost:3307`로 고정되어 있다. 앱을 도커로 띄우거나 DB가 다른 서버에 있으면 URL을 `.env`로 뺀다.
 
 ## 작업 기록 (WORKLOG.md)
 
