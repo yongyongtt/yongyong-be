@@ -35,3 +35,9 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### 덤프, 비밀값, 개인 설정 ###
+*.sql
+.env
+CLAUDE.local.md
+WORKLOG.md
