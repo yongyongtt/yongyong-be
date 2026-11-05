@@ -57,7 +57,7 @@ Query: `year`, `month`
       "regionCode": "4146134000",
       "regionName": "원삼면",
       "gu": "처인구",
-      "score": 68.1
+      "score": 68
     }
   ]
 }
@@ -67,11 +67,11 @@ Query: `year`, `month`
 | --- | --- |
 | availableYears | `SELECT DISTINCT year FROM ml_priority WHERE unit = 'dong'` |
 | availableMonths | `SELECT DISTINCT month FROM ml_priority WHERE year = :year AND unit = 'dong'` (null = 연간, null을 맨 앞에) |
-| updatedAt | `MAX(ml_model_info.trained_at) WHERE year = :year` |
+| updatedAt | `MAX(ml_model_info.trained_at) WHERE year = :year`. 그 연도 행이 없으면 null (decisions D12) |
 | regionCount | `COUNT(*) FROM ml_priority` |
 | vulnerableCount | `SUM(ml_priority.is_vulnerable)` (score_total 50점 이상) |
 | avgScore | `AVG(ml_priority.score_total)`, 소수 첫째 자리 |
-| top10 | `rank_total, region_cd, region_nm, gu, score_total` ORDER BY `rank_total` LIMIT 10 |
+| top10 | `rank_total, region_cd, region_nm, gu, score_total` ORDER BY `rank_total, region_cd` LIMIT 10. `score`는 정수로 반올림 (decisions D12) |
 
 공통 조건: `year = :year AND unit = 'dong'` + 연간 `month IS NULL` / 월 `month = :month`
 에러: 그 연·월 행이 0개면 `PERIOD_NOT_FOUND`

@@ -54,18 +54,19 @@ public class MlPriority {
 }
 ```
 
-repository 예시 (조회 메서드만, `Repository<T, ID>` 상속)
+repository 예시 (조회 메서드만, `Repository<T, ID>` 상속). 개수, 평균, TOP 10은 서비스에서 계산한다 (decisions D13)
 
 ```java
 public interface MlPriorityRepository extends Repository<MlPriority, MlPriority.Id> {
-    List<MlPriority> findByYearAndMonthKeyAndUnitOrderByRankTotal(Integer year, Integer monthKey, String unit);
-    Optional<MlPriority> findByYearAndMonthKeyAndUnitAndRegionCd(Integer year, Integer monthKey, String unit, String regionCd);
+    interface PeriodKey {
+        Integer getYear();
+        Integer getMonthKey();
+    }
 
-    @Query("select distinct p.monthKey from MlPriority p where p.year = :year and p.unit = :unit order by p.monthKey")
-    List<Integer> findMonthKeys(Integer year, String unit);
+    List<MlPriority> findByYearAndMonthKeyAndUnit(Integer year, Integer monthKey, String unit);
 
-    @Query("select count(p) from MlPriority p where p.year = :year and p.monthKey = :monthKey and p.unit = :unit and p.isVulnerable = true")
-    long countVulnerable(Integer year, Integer monthKey, String unit);
+    @Query("select distinct p.year as year, p.monthKey as monthKey from MlPriority p where p.unit = :unit order by p.year, p.monthKey")
+    List<PeriodKey> findPeriods(String unit);
 }
 ```
 
