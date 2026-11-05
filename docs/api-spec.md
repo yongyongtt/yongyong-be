@@ -17,7 +17,7 @@
 - `unit` 파라미터는 없다. 서버가 항상 `unit = 'dong'`으로 조회한다 (decisions D6)
 - 아래 "출처"의 `month IS NULL` 조건은 DB 기준 설명이다. 코드에서는 `MlPriority` 엔티티의 `monthKey`(0 = 연간, 1~12 = 월)로 조회한다 (data-mapping.md "엔티티 매핑")
 - `regionCode`: 행정동 코드 10자리 (`ml_*.region_cd` = `feat_*.dong_cd`), 예 `4146125000`
-- 비율은 % (0~100, 소수 첫째 자리), 점수는 0~100 DB 값 그대로
+- 비율은 % (0~100) 정수로 반올림 (decisions D14), 점수는 0~100 값으로 API별 표기를 따른다 (decisions D12)
 
 | # | Method | Endpoint | 화면 | month |
 | --- | --- | --- | --- | --- |
@@ -280,18 +280,18 @@ Query: `year` (month 없음)
     {
       "year": 2025,
       "month": 1,
-      "unmatchedRate": 44.7,
+      "unmatchedRate": 45,
       "requestCount": 2779,
       "matchedCount": 1538,
-      "cityAvgRate": 44.7
+      "cityAvgRate": 45
     },
     {
       "year": 2025,
       "month": 2,
-      "unmatchedRate": 36.6,
+      "unmatchedRate": 37,
       "requestCount": 2571,
       "matchedCount": 1631,
-      "cityAvgRate": 36.0
+      "cityAvgRate": 36
     }
   ]
 }
@@ -301,13 +301,13 @@ Query: `year` (month 없음)
 
 | 필드 | 출처 |
 | --- | --- |
-| unmatchedRate | `feat_region_month.taxi_unmatched_rate` ×100 |
-| requestCount, matchedCount | `feat_region_month.taxi_req`, `taxi_matched` (정수) |
-| cityAvgRate | 같은 연·월 `feat_city_month.taxi_unmatched_rate` ×100 |
+| unmatchedRate | `feat_region_month.taxi_unmatched_rate` ×100, 정수로 반올림 |
+| requestCount, matchedCount | `feat_region_month.taxi_req`, `taxi_matched` (정수로 반올림) |
+| cityAvgRate | 같은 연·월 `feat_city_month.taxi_unmatched_rate` ×100, 정수로 반올림. 행이 없으면 null |
 
 - 조건: `year = :year AND dong_cd = :regionCode`, 정렬 `month`
 - y축 범위는 프론트가 자동으로 정한다
-- 에러: 행이 0개면 `REGION_NOT_FOUND`
+- 에러: 연도 데이터가 아예 없으면 `PERIOD_NOT_FOUND`, 연도는 있는데 지역 행이 없으면 `REGION_NOT_FOUND`
 
 ---
 
