@@ -9,8 +9,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.example.yongyong.common.exception.BusinessException;
 import com.example.yongyong.common.exception.ErrorCode;
+import com.example.yongyong.region.dto.RegionComparisonResponse;
 import com.example.yongyong.region.dto.RegionDetailResponse;
 import com.example.yongyong.region.dto.RegionPreviewResponse;
+import com.example.yongyong.region.service.RegionMetricService;
 import com.example.yongyong.region.service.RegionService;
 import java.util.Arrays;
 import java.util.List;
@@ -28,9 +30,11 @@ class RegionControllerTest {
 
   private static final String URL = "/api/regions/4146125000/preview";
   private static final String DETAIL_URL = "/api/regions/4146125000";
+  private static final String COMPARISON_URL = "/api/regions/4146125000/comparison";
 
   @Autowired private MockMvc mockMvc;
   @MockitoBean private RegionService regionService;
+  @MockitoBean private RegionMetricService regionMetricService;
 
   @Test
   @DisplayName("미리보기를 ApiResponse 형식으로 내리고 필드명이 명세와 같다")
@@ -200,6 +204,73 @@ class RegionControllerTest {
         .perform(get(DETAIL_URL).param("year", "2025"))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.error.code").value("REGION_NOT_FOUND"));
+  }
+
+  @Test
+  @DisplayName("시 평균 비교를 ApiResponse로 내리고 정수와 null을 명세대로 내린다")
+  void returnsComparison() throws Exception {
+    given(regionMetricService.getComparison(eq("4146125000"), any()))
+        .willReturn(
+            new RegionComparisonResponse(
+                List.of(
+                    new RegionComparisonResponse.Metric(
+                        "TAXI_MATCH_RATE", "택시 호출 성사율", "%", 53, 54),
+                    new RegionComparisonResponse.Metric("BUS_STOP_COUNT", "버스 정류장 수", "개", 148, 82),
+                    new RegionComparisonResponse.Metric(
+                        "FLOATING_POP", "생활인구 (시간 평균)", "명", null, 5938))));
+
+    mockMvc
+        .perform(get(COMPARISON_URL).param("year", "2025"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.metrics[0].key").value("TAXI_MATCH_RATE"))
+        .andExpect(jsonPath("$.data.metrics[0].label").value("택시 호출 성사율"))
+        .andExpect(jsonPath("$.data.metrics[0].unit").value("%"))
+        .andExpect(jsonPath("$.data.metrics[0].region").value(53))
+        .andExpect(jsonPath("$.data.metrics[0].cityAvg").value(54))
+        .andExpect(jsonPath("$.data.metrics[1].region").value(148))
+        .andExpect(jsonPath("$.data.metrics[1].cityAvg").value(82))
+        .andExpect(jsonPath("$.data.metrics[2].region").value((Object) null))
+        .andExpect(jsonPath("$.data.metrics[2].cityAvg").value(5938));
+  }
+
+  @Test
+  @DisplayName("비교에 year가 없으면 400 INVALID_REQUEST를 내린다")
+  void comparisonMissingYear() throws Exception {
+    mockMvc
+        .perform(get(COMPARISON_URL))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+  }
+
+  @Test
+  @DisplayName("비교에 범위 밖 month가 오면 400 INVALID_REQUEST를 내린다")
+  void comparisonInvalidMonth() throws Exception {
+    mockMvc
+        .perform(get(COMPARISON_URL).param("year", "2025").param("month", "13"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+  }
+
+  @Test
+  @DisplayName("비교의 regionCode가 숫자 10자리가 아니면 400 INVALID_REQUEST를 내린다")
+  void comparisonInvalidRegionCode() throws Exception {
+    mockMvc
+        .perform(get("/api/regions/abc/comparison").param("year", "2025"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+  }
+
+  @Test
+  @DisplayName("비교의 서비스 예외를 404 에러 코드로 내린다")
+  void comparisonNotFound() throws Exception {
+    given(regionMetricService.getComparison(any(), any()))
+        .willThrow(new BusinessException(ErrorCode.PERIOD_NOT_FOUND));
+
+    mockMvc
+        .perform(get(COMPARISON_URL).param("year", "2024"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("PERIOD_NOT_FOUND"));
   }
 
   @Test
