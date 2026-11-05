@@ -28,8 +28,8 @@ ai_ratio() {
     echo "ai-ratio: 측정 못 함 (base '$base' 없음)"; return 0
   fi
   local ai_commits human_commits
-  ai_commits=$(git log --format='%H' --grep="$AI_MARK" -i "$range" || true)
-  human_commits=$(git log --format='%H' --grep="$AI_MARK" -i --invert-grep "$range" || true)
+  ai_commits=$(git log --no-merges --format='%H' --grep="$AI_MARK" -i "$range" || true)
+  human_commits=$(git log --no-merges --format='%H' --grep="$AI_MARK" -i --invert-grep "$range" || true)
 
   if [[ -z "$ai_commits" ]]; then
     echo "ai-ratio: Claude 커밋 없음 (트레일러 '$AI_MARK' 확인)"; return 0

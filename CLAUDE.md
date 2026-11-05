@@ -136,8 +136,10 @@ API 하나를 만들 때 아래 순서를 지킨다. 순서를 건너뛰지 않�
 6. **검증**: `./gradlew spotlessApply check` (포맷, ArchUnit, 전체 테스트) 통과
 7. **기록·커밋**: `WORKLOG.md` 항목을 마무리하고(7장), 커밋한다
 
-브랜치: `feat/api-{번호}-{짧은이름}` (예: `feat/api-1-dashboard-summary`). main에 직접 커밋하지 않는다.
+브랜치: `feat/api-{번호}` (예: `feat/api-1`). main에 직접 커밋하지 않는다.
 커밋 메시지: `feat(api-1): 대시보드 요약 조회` 형식. Claude가 만든 커밋에는 `Co-Authored-By: Claude` 트레일러를 반드시 남긴다 (사람 수정 비율 계산에 쓴다).
+커밋 메시지 제목은 15자 안팎으로 짧게, 본문은 쓰지 않는다 (Co-Authored-By 트레일러는 유지).
+커밋하기 전에 메시지와 커밋할 파일 목록을 사용자에게 보여주고, 허락받은 뒤에 커밋한다.
 `*.sql`, `.env`, 비밀값은 커밋하지 않는다. `.gitignore`에 `*.sql`, `.env`, `CLAUDE.local.md`가 있는지 확인한다.
 사용자가 요청하기 전에는 push하지 않는다.
 
