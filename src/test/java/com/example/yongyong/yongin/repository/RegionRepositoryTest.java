@@ -1,6 +1,7 @@
 package com.example.yongyong.yongin.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.example.yongyong.MariaDbTestSupport;
 import com.example.yongyong.common.converter.OptionJson;
@@ -96,10 +97,43 @@ class RegionRepositoryTest extends MariaDbTestSupport {
     assertThat(explanation.getIsKeep()).isFalse();
     assertThat(explanation.getSummary()).isEqualTo("정류장까지 멀어 걷기 힘들어 똑버스 도입 검토");
     assertThat(explanation.getOptions())
+        .extracting(OptionJson::mode, OptionJson::name, OptionJson::status)
         .containsExactly(
-            new OptionJson("DRT", "똑버스", "추천"),
-            new OptionJson("BUS", "노선버스", "제외"),
-            new OptionJson("HAPPY_TAXI", "행복택시", "제외"));
+            tuple("DRT", "똑버스", "추천"),
+            tuple("BUS", "노선버스", "제외"),
+            tuple("HAPPY_TAXI", "행복택시", "제외"));
+  }
+
+  @Test
+  @DisplayName("options의 전체 필드와 추천 문장, 생성 시각을 매핑한다")
+  void explanationDetail() {
+    // SELECT created_at, options, reasons, cautions FROM ml_explanation WHERE
+    // region_cd='4146125000';
+    MlExplanation explanation =
+        mlExplanationRepository.findByYearAndUnitAndRegionCd(2025, "dong", POGOK).orElseThrow();
+
+    assertThat(explanation.getCreatedAt()).isEqualTo("2026-11-05 11:03");
+    assertThat(explanation.getReasons()).hasSize(2);
+    assertThat(explanation.getReasons().getFirst())
+        .isEqualTo("정류장까지 걷는 시간이 12분으로 용인시 평균(7분)보다 길어, 걸어서 이동하기 힘든 주민을 위한 수단이 필요해요.");
+    assertThat(explanation.getCautions())
+        .containsExactly("똑버스 실제 운영 구역 자료가 없어, 기존 운영 구역과 겹치는지 확인이 필요해요.");
+
+    OptionJson drt = explanation.getOptions().getFirst();
+    assertThat(drt.subtitle()).isEqualTo("수요응답형 버스");
+    assertThat(drt.desc()).isEqualTo("정해진 노선 없이 호출에 따라 운행해요");
+    assertThat(drt.rank()).isEqualTo(1);
+    assertThat(drt.score()).isEqualTo(80.7);
+    assertThat(drt.isCurrent()).isFalse();
+    assertThat(drt.reasons()).hasSize(2);
+    assertThat(drt.facts()).hasSize(3);
+    assertThat(drt.together()).isNull();
+
+    OptionJson bus = explanation.getOptions().get(1);
+    assertThat(bus.rank()).isNull();
+    assertThat(bus.score()).isEqualTo(46.8);
+    assertThat(bus.isCurrent()).isTrue();
+    assertThat(explanation.getOptions().getLast().facts()).isEmpty();
   }
 
   @Test
@@ -113,8 +147,12 @@ class RegionRepositoryTest extends MariaDbTestSupport {
             .orElseThrow();
 
     assertThat(explanation.getIsKeep()).isTrue();
-    assertThat(explanation.getOptions().getFirst())
-        .isEqualTo(new OptionJson("KEEP", "현행 유지", "추천"));
+    OptionJson keep = explanation.getOptions().getFirst();
+    assertThat(keep.mode()).isEqualTo("KEEP");
+    assertThat(keep.name()).isEqualTo("현행 유지");
+    assertThat(keep.status()).isEqualTo("추천");
+    assertThat(keep.rank()).isEqualTo(1);
+    assertThat(keep.score()).isNull();
   }
 
   private MlPriority priority(int monthKey) {

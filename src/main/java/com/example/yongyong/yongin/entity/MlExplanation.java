@@ -2,6 +2,7 @@ package com.example.yongyong.yongin.entity;
 
 import com.example.yongyong.common.converter.OptionJson;
 import com.example.yongyong.common.converter.OptionListConverter;
+import com.example.yongyong.common.converter.StringListConverter;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.IdClass;
@@ -27,5 +28,12 @@ public class MlExplanation {
   @Convert(converter = OptionListConverter.class)
   private List<OptionJson> options;
 
+  @Convert(converter = StringListConverter.class)
+  private List<String> reasons;
+
+  @Convert(converter = StringListConverter.class)
+  private List<String> cautions;
+
   private String summary;
+  private String createdAt;
 }

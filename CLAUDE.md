@@ -1,6 +1,6 @@
 # CLAUDE.md — 용인 교통 사각지대 진단 백엔드
 
-RULES_VERSION: R7  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 변경 이력"에 한 줄 남긴다)
+RULES_VERSION: R8  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 변경 이력"에 한 줄 남긴다)
 
 이 파일은 이 저장소에서 일하는 Claude가 매번 따라야 하는 규칙이다.
 규칙과 다른 방법이 더 낫다고 판단되면, 바로 바꾸지 말고 사용자에게 먼저 제안한다.
@@ -92,7 +92,7 @@ RULES_VERSION: R7  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 �
 | `INVALID_REQUEST` | 400 | 파라미터 검증 실패 (year 없음, month 1~12 밖, regionCode 형식) |
 | `REGION_NOT_FOUND` | 404 | 연도 데이터는 있는데 regionCode가 없음 |
 | `PERIOD_NOT_FOUND` | 404 | 연도 데이터가 아예 없거나, 지역은 있는데 고른 월이 적재되지 않음 (decisions D7) |
-| `RECOMMENDATION_NOT_FOUND` | 404 | `ml_explanation`에 그 지역 행이 없음 |
+| `RECOMMENDATION_NOT_FOUND` | 404 | `ml_explanation`에 그 지역 행이 없음 (없는 연도, 없는 지역 포함) |
 | `RESOURCE_NOT_FOUND` | 404 | 없는 경로 |
 | `METHOD_NOT_ALLOWED` | 405 | 지원하지 않는 HTTP 메서드 |
 | `INTERNAL_ERROR` | 500 | 그 밖의 예외. 메시지에 내부 정보(SQL, 스택)를 담지 않는다 |
@@ -119,7 +119,7 @@ RULES_VERSION: R7  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 �
 **조회 조건·값**
 - `ml_` 조회 조건: `year`, `unit`, `regionCd` + `ml_priority`만 `monthKey`. `ml_region`, `ml_explanation`에는 month가 없다 → 월을 골라도 연간 값을 쓴다
 - `feat_` 테이블은 키가 다르다: 지역 = `dongCd`, 연간 값은 `FeatRegion`(month 없음), 월별 값은 `FeatRegionMonth`(year, month)
-- 비율 컬럼(0~1)은 서버가 ×100 해서 % 값으로 내리고 **정수로 반올림** (decisions D14). 점수(0~100)는 DB 값 그대로. 단, API 1 TOP 10, API 3, API 4 헤더의 `score`는 정수로 반올림 (decisions D12). API 5 지표와 API 6 값도 모두 정수로 반올림 (decisions D14)
+- 비율 컬럼(0~1)은 서버가 ×100 해서 % 값으로 내리고 **정수로 반올림** (decisions D14). 점수(0~100)는 DB 값 그대로. 단, API 1 TOP 10, API 3, API 4 헤더, API 7 `options`의 `score`는 정수로 반올림 (decisions D12). API 5 지표와 API 6 값도 모두 정수로 반올림 (decisions D14)
 - JSON 문자열 컬럼(`options`, `reasons`, `cautions`, `type_chips`)은 엔티티 필드에 `@Convert`로 `common.converter`의 AttributeConverter를 달아 `List`로 받는다. 변환기의 쓰기 방향(`convertToDatabaseColumn`)은 예외를 던진다 (읽기 전용)
 - `tinyint(1)` 컬럼(`is_vulnerable`, `is_keep`, `low_reliability`)은 `Boolean`으로 매핑한다. 그래서 개수는 `SUM` 대신 서비스에서 `Boolean` 값으로 걸러 센다 (decisions D13)
 - 이번 범위는 행정동 38개만 구현한다. API에 `unit` 파라미터를 두지 않고, 서비스가 항상 `unit = "dong"`으로 조회한다 (decisions D6). DB에는 `village` 행도 있으니 `unit` 조건을 빼지 않는다
@@ -243,3 +243,4 @@ GitHub Actions `ci.yml`이 PR마다 아래를 돌리고, 하나라도 실패하�
 | 2026-11-06 | R5 | API 4 헤더 `score`도 정수로 반올림 | 사용자 결정 (API 3과 같은 지역의 숫자 일치), decisions D12 |
 | 2026-11-06 | R6 | API 5 지표를 비율까지 모두 정수로 반올림 | 사용자 결정 (API 1~4 표시와 일치), decisions D14 |
 | 2026-11-06 | R7 | 비율 기본 표기를 정수 반올림으로 변경, API 6 값도 정수 | 사용자 결정, decisions D14 |
+| 2026-11-06 | R8 | API 7 `options` `score` 정수 반올림, 없는 연도와 지역도 `RECOMMENDATION_NOT_FOUND` | 사용자 결정, decisions D12 |

@@ -45,9 +45,9 @@ class RegionServiceTest {
     givenExplanation(
         false,
         List.of(
-            new OptionJson("DRT", "똑버스", "추천"),
-            new OptionJson("BUS", "노선버스", "제외"),
-            new OptionJson("HAPPY_TAXI", "행복택시", "제외")));
+            option("DRT", "똑버스", "추천"),
+            option("BUS", "노선버스", "제외"),
+            option("HAPPY_TAXI", "행복택시", "제외")));
 
     RegionPreviewResponse response = regionService.getPreview(CODE, new PeriodQuery(2025, null));
 
@@ -70,7 +70,7 @@ class RegionServiceTest {
   void monthly() {
     givenPriority(2, 60.4, 6);
     givenRegion();
-    givenExplanation(false, List.of(new OptionJson("DRT", "똑버스", "추천")));
+    givenExplanation(false, List.of(option("DRT", "똑버스", "추천")));
 
     RegionPreviewResponse response = regionService.getPreview(CODE, new PeriodQuery(2025, 2));
 
@@ -84,7 +84,7 @@ class RegionServiceTest {
   void scoreRounded() {
     givenPriority(0, 64.7, 3);
     givenRegion();
-    givenExplanation(false, List.of(new OptionJson("DRT", "똑버스", "추천")));
+    givenExplanation(false, List.of(option("DRT", "똑버스", "추천")));
 
     RegionPreviewResponse response = regionService.getPreview(CODE, new PeriodQuery(2025, null));
 
@@ -99,9 +99,9 @@ class RegionServiceTest {
     givenExplanation(
         true,
         List.of(
-            new OptionJson("KEEP", "현행 유지", "추천"),
-            new OptionJson("DRT", "똑버스", "제외"),
-            new OptionJson("BUS", "노선버스", "제외")));
+            option("KEEP", "현행 유지", "추천"),
+            option("DRT", "똑버스", "제외"),
+            option("BUS", "노선버스", "제외")));
 
     RegionPreviewResponse response = regionService.getPreview(CODE, new PeriodQuery(2025, null));
 
@@ -351,6 +351,10 @@ class RegionServiceTest {
     ReflectionTestUtils.setField(row, "regionCd", code);
     ReflectionTestUtils.setField(row, "regionNm", name);
     return row;
+  }
+
+  private OptionJson option(String mode, String name, String status) {
+    return new OptionJson(mode, name, null, null, status, null, null, null, null, null, null);
   }
 
   private void assertError(PeriodQuery query, ErrorCode errorCode) {

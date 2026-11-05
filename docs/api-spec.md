@@ -329,7 +329,7 @@ Query: `year`
       "desc": "정해진 노선 없이 호출에 따라 운행해요",
       "status": "RECOMMENDED",
       "rank": 1,
-      "score": 80.7,
+      "score": 81,
       "isCurrent": false,
       "reasons": [
         "정류장까지 걷는 시간이 12분으로 용인시 평균(7분)보다 길어 도입하기 좋아요."
@@ -347,7 +347,7 @@ Query: `year`
       "desc": "지금 다니는 버스를 더 자주, 더 가까이 다니게 해요",
       "status": "EXCLUDED",
       "rank": null,
-      "score": 46.8,
+      "score": 47,
       "isCurrent": true,
       "reasons": [
         "인구밀도가 743명/km²로 용인시 평균(7,364명/km²)보다 낮아 버스를 늘리기 어려워요."
@@ -382,5 +382,6 @@ options 변환 규칙
 - `status`: DB `'추천'` → `RECOMMENDED`, `'제외'` → `EXCLUDED`. 그 밖의 값이 오면 예외(`INTERNAL_ERROR`)로 로그를 남긴다
 - `mode`: `BUS` / `DRT` / `HAPPY_TAXI`, `is_keep = 1`이면 맨 앞에 `KEEP`이 이미 들어 있다 (서버가 추가하지 않고 DB 그대로)
 - `facts`는 빈 배열 가능, `together`는 null 가능, `score`·`rank`는 null 가능 (KEEP은 score null)
+- `score`는 값이 있으면 정수로 반올림한다 (decisions D12)
 - 문장은 수정하지 않고 그대로 전달한다
-- 에러: 행이 없으면 `RECOMMENDATION_NOT_FOUND`
+- 에러: 행이 없으면 `RECOMMENDATION_NOT_FOUND` (없는 연도, 없는 지역 포함)
