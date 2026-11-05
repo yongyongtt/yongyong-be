@@ -2,6 +2,7 @@ package com.example.yongyong.yongin.entity;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.IdClass;
+import java.util.Comparator;
 import lombok.Getter;
 import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.Subselect;
@@ -19,6 +20,9 @@ import org.hibernate.annotations.Synchronize;
 @IdClass(MlPriority.Id.class)
 @Getter
 public class MlPriority {
+
+  public static final Comparator<MlPriority> RANK_ORDER =
+      Comparator.comparing(MlPriority::getRankTotal).thenComparing(MlPriority::getRegionCd);
 
   public record Id(Integer year, Integer monthKey, String unit, String regionCd) {}
 

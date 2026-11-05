@@ -62,6 +62,30 @@ class RegionRepositoryTest extends MariaDbTestSupport {
   }
 
   @Test
+  @DisplayName("칩 JSON을 목록으로 변환하고 신뢰도 컬럼을 매핑한다")
+  void regionDetail() {
+    // SELECT type_chips, low_reliability, reliability_note FROM ml_region WHERE
+    // region_cd='4146125000';
+    MlRegion region =
+        mlRegionRepository.findByYearAndUnitAndRegionCd(2025, "dong", POGOK).orElseThrow();
+
+    assertThat(region.getTypeChips())
+        .containsExactly("정류장까지 도보 김 · 12분 (평균 7분)", "정류장 500m 안 면적 좁음 · 54% (평균 77%)");
+    assertThat(region.getLowReliability()).isFalse();
+    assertThat(region.getReliabilityNote()).isNull();
+  }
+
+  @Test
+  @DisplayName("유형 이름으로 같은 유형 지역 6곳을 조회한다")
+  void regionsBySameType() {
+    // SELECT region_cd FROM ml_region WHERE type_nm='정류장 접근 취약형'; -- 6곳
+    assertThat(mlRegionRepository.findByYearAndUnitAndTypeNm(2025, "dong", "정류장 접근 취약형"))
+        .extracting(MlRegion::getRegionCd)
+        .containsExactlyInAnyOrder(
+            "4146125600", "4146125300", "4146125000", "4146556000", "4146353500", "4146553000");
+  }
+
+  @Test
   @DisplayName("options JSON을 목록으로 변환하고 Boolean과 요약을 매핑한다")
   void explanation() {
     // SELECT is_keep, summary, JSON_EXTRACT(options,'$[*].mode') FROM ml_explanation WHERE

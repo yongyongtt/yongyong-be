@@ -11,6 +11,10 @@ public record PeriodQuery(
 
   public static final String UNIT_DONG = "dong";
 
+  public static Integer toMonth(int monthKey) {
+    return monthKey == 0 ? null : monthKey;
+  }
+
   public int monthKey() {
     return month == null ? 0 : month;
   }

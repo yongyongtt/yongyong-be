@@ -2,6 +2,7 @@ package com.example.yongyong.region.controller;
 
 import com.example.yongyong.common.query.PeriodQuery;
 import com.example.yongyong.common.response.ApiResponse;
+import com.example.yongyong.region.dto.RegionDetailResponse;
 import com.example.yongyong.region.dto.RegionPreviewResponse;
 import com.example.yongyong.region.service.RegionService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -33,5 +34,16 @@ public class RegionController {
           String regionCode,
       @Valid @ParameterObject PeriodQuery query) {
     return ApiResponse.ok(regionService.getPreview(regionCode, query));
+  }
+
+  @Operation(summary = "지역 상세 개요·유형 조회")
+  @GetMapping("/{regionCode}")
+  public ApiResponse<RegionDetailResponse> getDetail(
+      @Parameter(description = "행정동 코드 10자리", example = "4146125000")
+          @PathVariable
+          @Pattern(regexp = "\\d{10}")
+          String regionCode,
+      @Valid @ParameterObject PeriodQuery query) {
+    return ApiResponse.ok(regionService.getDetail(regionCode, query));
   }
 }
