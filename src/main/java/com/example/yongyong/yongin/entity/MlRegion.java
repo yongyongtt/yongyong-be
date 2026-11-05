@@ -1,8 +1,11 @@
 package com.example.yongyong.yongin.entity;
 
+import com.example.yongyong.common.converter.StringListConverter;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
+import java.util.List;
 import lombok.Getter;
 import org.hibernate.annotations.Immutable;
 
@@ -20,4 +23,10 @@ public class MlRegion {
   @jakarta.persistence.Id private String regionCd;
   private String typeNm;
   private String typeDesc;
+
+  @Convert(converter = StringListConverter.class)
+  private List<String> typeChips;
+
+  private Boolean lowReliability;
+  private String reliabilityNote;
 }

@@ -11,7 +11,6 @@ import com.example.yongyong.yongin.entity.MlPriority;
 import com.example.yongyong.yongin.repository.MlModelInfoRepository;
 import com.example.yongyong.yongin.repository.MlPriorityRepository;
 import com.example.yongyong.yongin.repository.MlPriorityRepository.PeriodKey;
-import java.util.Comparator;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,8 +22,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class DashboardService {
 
   private static final int TOP_LIMIT = 10;
-  private static final Comparator<MlPriority> RANK_ORDER =
-      Comparator.comparing(MlPriority::getRankTotal).thenComparing(MlPriority::getRegionCd);
 
   private final MlPriorityRepository mlPriorityRepository;
   private final MlModelInfoRepository mlModelInfoRepository;
@@ -41,19 +38,23 @@ public class DashboardService {
             periods.stream().map(PeriodKey::getYear).distinct().toList(),
             periods.stream()
                 .filter(period -> period.getYear().equals(year))
-                .map(period -> period.getMonthKey() == 0 ? null : period.getMonthKey())
+                .map(period -> PeriodQuery.toMonth(period.getMonthKey()))
                 .toList(),
             mlModelInfoRepository.findLatestTrainedAt(year)),
         new DashboardResponse.Summary(
             rows.size(),
             rows.stream().filter(MlPriority::getIsVulnerable).count(),
             averageScore(rows)),
-        rows.stream().sorted(RANK_ORDER).limit(TOP_LIMIT).map(this::toTopRegion).toList());
+        rows.stream()
+            .sorted(MlPriority.RANK_ORDER)
+            .limit(TOP_LIMIT)
+            .map(this::toTopRegion)
+            .toList());
   }
 
   public DashboardMapResponse getMap(PeriodQuery query) {
     return new DashboardMapResponse(
-        findRows(query).stream().sorted(RANK_ORDER).map(this::toMapRegion).toList());
+        findRows(query).stream().sorted(MlPriority.RANK_ORDER).map(this::toMapRegion).toList());
   }
 
   private List<MlPriority> findRows(PeriodQuery query) {
