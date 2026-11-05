@@ -2,8 +2,10 @@ package com.example.yongyong.region.controller;
 
 import com.example.yongyong.common.query.PeriodQuery;
 import com.example.yongyong.common.response.ApiResponse;
+import com.example.yongyong.region.dto.RegionComparisonResponse;
 import com.example.yongyong.region.dto.RegionDetailResponse;
 import com.example.yongyong.region.dto.RegionPreviewResponse;
+import com.example.yongyong.region.service.RegionMetricService;
 import com.example.yongyong.region.service.RegionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class RegionController {
 
   private final RegionService regionService;
+  private final RegionMetricService regionMetricService;
 
   @Operation(summary = "지역 미리보기 조회")
   @GetMapping("/{regionCode}/preview")
@@ -45,5 +48,16 @@ public class RegionController {
           String regionCode,
       @Valid @ParameterObject PeriodQuery query) {
     return ApiResponse.ok(regionService.getDetail(regionCode, query));
+  }
+
+  @Operation(summary = "시 평균 비교 조회")
+  @GetMapping("/{regionCode}/comparison")
+  public ApiResponse<RegionComparisonResponse> getComparison(
+      @Parameter(description = "행정동 코드 10자리", example = "4146125000")
+          @PathVariable
+          @Pattern(regexp = "\\d{10}")
+          String regionCode,
+      @Valid @ParameterObject PeriodQuery query) {
+    return ApiResponse.ok(regionMetricService.getComparison(regionCode, query));
   }
 }
