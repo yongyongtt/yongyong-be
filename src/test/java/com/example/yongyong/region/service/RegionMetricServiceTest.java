@@ -9,6 +9,8 @@ import com.example.yongyong.common.exception.ErrorCode;
 import com.example.yongyong.common.query.PeriodQuery;
 import com.example.yongyong.region.dto.RegionComparisonResponse;
 import com.example.yongyong.region.dto.RegionComparisonResponse.Metric;
+import com.example.yongyong.region.dto.RegionTrendResponse;
+import com.example.yongyong.region.dto.RegionTrendResponse.Point;
 import com.example.yongyong.yongin.entity.FeatCity;
 import com.example.yongyong.yongin.entity.FeatCityMonth;
 import com.example.yongyong.yongin.entity.FeatRegion;
@@ -171,6 +173,78 @@ class RegionMetricServiceTest {
         .willReturn(Optional.empty());
 
     assertError(new PeriodQuery(2025, 2), ErrorCode.PERIOD_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("추이는 월 순서대로 비율과 건수를 정수로 반올림해 내린다")
+  void trend() {
+    given(featRegionMonthRepository.findByYearAndDongCd(2025, CODE))
+        .willReturn(
+            List.of(
+                regionTrendRow(2, 0.3656, 2571.0, 1631.0),
+                regionTrendRow(1, 0.4466, 2778.6, 1537.5)));
+    given(featCityMonthRepository.findByYear(2025))
+        .willReturn(List.of(cityTrendRow(1, 0.4473), cityTrendRow(2, 0.3596)));
+
+    RegionTrendResponse response = regionMetricService.getUnmatchedTrend(CODE, 2025);
+
+    assertThat(response.points())
+        .containsExactly(
+            new Point(2025, 1, 45, 2779, 1538, 45), new Point(2025, 2, 37, 2571, 1631, 36));
+  }
+
+  @Test
+  @DisplayName("추이에서 그 달의 시 평균 행이 없으면 cityAvgRate만 null로 내린다")
+  void trendCityMissing() {
+    given(featRegionMonthRepository.findByYearAndDongCd(2025, CODE))
+        .willReturn(List.of(regionTrendRow(1, 0.4466, 2779.0, 1538.0)));
+    given(featCityMonthRepository.findByYear(2025)).willReturn(List.of());
+
+    RegionTrendResponse response = regionMetricService.getUnmatchedTrend(CODE, 2025);
+
+    assertThat(response.points()).containsExactly(new Point(2025, 1, 45, 2779, 1538, null));
+  }
+
+  @Test
+  @DisplayName("추이에서 연도 데이터가 없으면 PERIOD_NOT_FOUND를 던진다")
+  void trendYearNotLoaded() {
+    given(featRegionMonthRepository.findByYearAndDongCd(2024, CODE)).willReturn(List.of());
+    given(featRegionMonthRepository.existsByYear(2024)).willReturn(false);
+
+    assertTrendError(2024, ErrorCode.PERIOD_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("추이에서 연도는 있는데 지역이 없으면 REGION_NOT_FOUND를 던진다")
+  void trendRegionNotFound() {
+    given(featRegionMonthRepository.findByYearAndDongCd(2025, CODE)).willReturn(List.of());
+    given(featRegionMonthRepository.existsByYear(2025)).willReturn(true);
+
+    assertTrendError(2025, ErrorCode.REGION_NOT_FOUND);
+  }
+
+  private void assertTrendError(int year, ErrorCode errorCode) {
+    assertThatThrownBy(() -> regionMetricService.getUnmatchedTrend(CODE, year))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(errorCode);
+  }
+
+  private FeatRegionMonth regionTrendRow(int month, double rate, double req, double matched) {
+    FeatRegionMonth row = new FeatRegionMonth();
+    ReflectionTestUtils.setField(row, "year", 2025);
+    ReflectionTestUtils.setField(row, "month", month);
+    ReflectionTestUtils.setField(row, "taxiUnmatchedRate", rate);
+    ReflectionTestUtils.setField(row, "taxiReq", req);
+    ReflectionTestUtils.setField(row, "taxiMatched", matched);
+    return row;
+  }
+
+  private FeatCityMonth cityTrendRow(int month, double rate) {
+    FeatCityMonth row = new FeatCityMonth();
+    ReflectionTestUtils.setField(row, "month", month);
+    ReflectionTestUtils.setField(row, "taxiUnmatchedRate", rate);
+    return row;
   }
 
   private void assertError(PeriodQuery query, ErrorCode errorCode) {

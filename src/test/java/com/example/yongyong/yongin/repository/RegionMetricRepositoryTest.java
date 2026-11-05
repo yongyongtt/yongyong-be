@@ -70,6 +70,41 @@ class RegionMetricRepositoryTest extends MariaDbTestSupport {
   }
 
   @Test
+  @DisplayName("지역의 월별 행 12개를 조회하고 미배차율과 건수를 매핑한다")
+  void featRegionMonthRows() {
+    // SELECT month, taxi_unmatched_rate, taxi_req, taxi_matched FROM feat_region_month WHERE
+    // dong_cd='4146125000' AND year=2025; -- 12행, 1월 0.4466, 2779, 1538
+    List<FeatRegionMonth> rows = featRegionMonthRepository.findByYearAndDongCd(2025, POGOK);
+
+    assertThat(rows).hasSize(12);
+    FeatRegionMonth january =
+        rows.stream().filter(row -> row.getMonth() == 1).findFirst().orElseThrow();
+    assertThat(january.getTaxiUnmatchedRate()).isEqualTo(0.4466);
+    assertThat(january.getTaxiReq()).isEqualTo(2779);
+    assertThat(january.getTaxiMatched()).isEqualTo(1538);
+    assertThat(featRegionMonthRepository.findByYearAndDongCd(2025, "0000000000")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("월별 표에 연도 데이터가 있는지 확인한다")
+  void featRegionMonthExistsByYear() {
+    // SELECT COUNT(*) FROM feat_region_month WHERE year=2025; -- 456 / year=2024; -- 0
+    assertThat(featRegionMonthRepository.existsByYear(2025)).isTrue();
+    assertThat(featRegionMonthRepository.existsByYear(2024)).isFalse();
+  }
+
+  @Test
+  @DisplayName("feat_city_month의 미배차율을 매핑한다")
+  void featCityMonthUnmatchedRate() {
+    // SELECT taxi_unmatched_rate FROM feat_city_month WHERE year=2025 AND month=1; -- 0.4473
+    assertThat(featCityMonthRepository.findByYear(2025))
+        .filteredOn(row -> row.getMonth() == 1)
+        .singleElement()
+        .extracting(FeatCityMonth::getTaxiUnmatchedRate)
+        .isEqualTo(0.4473);
+  }
+
+  @Test
   @DisplayName("feat_city를 연도와 unit으로 조회한다")
   void featCity() {
     // SELECT n_stops, elderly_ratio FROM feat_city WHERE year=2025 AND unit='dong'; -- 81.6, 0.1774

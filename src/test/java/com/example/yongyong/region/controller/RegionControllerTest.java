@@ -12,6 +12,7 @@ import com.example.yongyong.common.exception.ErrorCode;
 import com.example.yongyong.region.dto.RegionComparisonResponse;
 import com.example.yongyong.region.dto.RegionDetailResponse;
 import com.example.yongyong.region.dto.RegionPreviewResponse;
+import com.example.yongyong.region.dto.RegionTrendResponse;
 import com.example.yongyong.region.service.RegionMetricService;
 import com.example.yongyong.region.service.RegionService;
 import java.util.Arrays;
@@ -31,6 +32,7 @@ class RegionControllerTest {
   private static final String URL = "/api/regions/4146125000/preview";
   private static final String DETAIL_URL = "/api/regions/4146125000";
   private static final String COMPARISON_URL = "/api/regions/4146125000/comparison";
+  private static final String TREND_URL = "/api/regions/4146125000/unmatched-trend";
 
   @Autowired private MockMvc mockMvc;
   @MockitoBean private RegionService regionService;
@@ -269,6 +271,68 @@ class RegionControllerTest {
 
     mockMvc
         .perform(get(COMPARISON_URL).param("year", "2024"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("PERIOD_NOT_FOUND"));
+  }
+
+  @Test
+  @DisplayName("미배차율 추이를 ApiResponse로 내리고 필드명과 null이 명세와 같다")
+  void returnsTrend() throws Exception {
+    given(regionMetricService.getUnmatchedTrend("4146125000", 2025))
+        .willReturn(
+            new RegionTrendResponse(
+                List.of(
+                    new RegionTrendResponse.Point(2025, 1, 45, 2779, 1538, 45),
+                    new RegionTrendResponse.Point(2025, 2, 37, 2571, 1631, null))));
+
+    mockMvc
+        .perform(get(TREND_URL).param("year", "2025"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.points[0].year").value(2025))
+        .andExpect(jsonPath("$.data.points[0].month").value(1))
+        .andExpect(jsonPath("$.data.points[0].unmatchedRate").value(45))
+        .andExpect(jsonPath("$.data.points[0].requestCount").value(2779))
+        .andExpect(jsonPath("$.data.points[0].matchedCount").value(1538))
+        .andExpect(jsonPath("$.data.points[0].cityAvgRate").value(45))
+        .andExpect(jsonPath("$.data.points[1].cityAvgRate").value((Object) null));
+  }
+
+  @Test
+  @DisplayName("추이에 year가 없으면 400 INVALID_REQUEST를 내린다")
+  void trendMissingYear() throws Exception {
+    mockMvc
+        .perform(get(TREND_URL))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+  }
+
+  @Test
+  @DisplayName("추이의 year가 숫자가 아니면 400 INVALID_REQUEST를 내린다")
+  void trendInvalidYear() throws Exception {
+    mockMvc
+        .perform(get(TREND_URL).param("year", "abc"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+  }
+
+  @Test
+  @DisplayName("추이의 regionCode가 숫자 10자리가 아니면 400 INVALID_REQUEST를 내린다")
+  void trendInvalidRegionCode() throws Exception {
+    mockMvc
+        .perform(get("/api/regions/abc/unmatched-trend").param("year", "2025"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+  }
+
+  @Test
+  @DisplayName("추이의 서비스 예외를 404 에러 코드로 내린다")
+  void trendNotFound() throws Exception {
+    given(regionMetricService.getUnmatchedTrend(any(), any()))
+        .willThrow(new BusinessException(ErrorCode.PERIOD_NOT_FOUND));
+
+    mockMvc
+        .perform(get(TREND_URL).param("year", "2024"))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.error.code").value("PERIOD_NOT_FOUND"));
   }
