@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.given;
 import com.example.yongyong.common.exception.BusinessException;
 import com.example.yongyong.common.exception.ErrorCode;
 import com.example.yongyong.common.query.PeriodQuery;
+import com.example.yongyong.dashboard.dto.DashboardMapResponse;
 import com.example.yongyong.dashboard.dto.DashboardResponse;
 import com.example.yongyong.yongin.entity.MlPriority;
 import com.example.yongyong.yongin.repository.MlModelInfoRepository;
@@ -152,6 +153,71 @@ class DashboardServiceTest {
     given(rows(2024, 0)).willReturn(List.of());
 
     assertPeriodNotFound(new PeriodQuery(2024, null));
+  }
+
+  @Test
+  @DisplayName("지도는 연간 행을 dong으로 조회해 전체 지역을 DB 점수 그대로 내린다")
+  void mapAnnual() {
+    List<MlPriority> rows = new ArrayList<>();
+    IntStream.rangeClosed(1, 11)
+        .forEach(rank -> rows.add(row(rank, "R" + rank, "지역" + rank, 68.1, false)));
+    given(rows(2025, 0)).willReturn(rows);
+
+    DashboardMapResponse response = dashboardService.getMap(new PeriodQuery(2025, null));
+
+    assertThat(response.regions()).hasSize(11);
+    assertThat(response.regions().getFirst())
+        .isEqualTo(new DashboardMapResponse.MapRegion("R1", "지역1", "처인구", 68.1, 1));
+  }
+
+  @Test
+  @DisplayName("지도에서 월을 고르면 그 달 행을 조회한다")
+  void mapMonthly() {
+    given(rows(2025, 2)).willReturn(List.of(row(1, "4146134000", "원삼면", 67.4, true)));
+
+    DashboardMapResponse response = dashboardService.getMap(new PeriodQuery(2025, 2));
+
+    assertThat(response.regions().getFirst().score()).isEqualTo(67.4);
+  }
+
+  @Test
+  @DisplayName("지도는 rank_total 순, 공동 순위는 region_cd 순으로 정렬한다")
+  void mapOrder() {
+    given(rows(2025, 0))
+        .willReturn(
+            List.of(
+                row(2, "A", "2위", 60.0, false),
+                row(1, "C", "공동 1위, 코드가 뒤", 60.0, false),
+                row(1, "B", "공동 1위, 코드가 앞", 60.0, false)));
+
+    DashboardMapResponse response = dashboardService.getMap(new PeriodQuery(2025, null));
+
+    assertThat(response.regions())
+        .extracting(DashboardMapResponse.MapRegion::regionCode)
+        .containsExactly("B", "C", "A");
+  }
+
+  @Test
+  @DisplayName("지도에서 적재되지 않은 월이면 PERIOD_NOT_FOUND를 던진다")
+  void mapMonthNotLoaded() {
+    given(rows(2025, 5)).willReturn(List.of());
+
+    assertMapPeriodNotFound(new PeriodQuery(2025, 5));
+  }
+
+  @Test
+  @DisplayName("지도에서 적재되지 않은 연도면 PERIOD_NOT_FOUND를 던진다")
+  void mapYearNotLoaded() {
+    given(rows(2024, 0)).willReturn(List.of());
+
+    assertMapPeriodNotFound(new PeriodQuery(2024, null));
+  }
+
+  private void assertMapPeriodNotFound(PeriodQuery query) {
+    assertThatThrownBy(() -> dashboardService.getMap(query))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.PERIOD_NOT_FOUND);
   }
 
   private List<MlPriority> rows(int year, int monthKey) {
