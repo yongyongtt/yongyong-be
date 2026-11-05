@@ -1,5 +1,7 @@
 package com.example.yongyong.dashboard.service;
 
+import static com.example.yongyong.common.query.PeriodQuery.UNIT_DONG;
+
 import com.example.yongyong.common.exception.BusinessException;
 import com.example.yongyong.common.exception.ErrorCode;
 import com.example.yongyong.common.query.PeriodQuery;
@@ -20,7 +22,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class DashboardService {
 
-  private static final String UNIT_DONG = "dong";
   private static final int TOP_LIMIT = 10;
   private static final Comparator<MlPriority> RANK_ORDER =
       Comparator.comparing(MlPriority::getRankTotal).thenComparing(MlPriority::getRegionCd);
