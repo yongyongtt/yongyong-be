@@ -25,7 +25,7 @@ jobs:
         run: ./gradlew spotlessCheck
 
       - name: test
-        run: ./gradlew test   # 단위·통합(Testcontainers)·ArchUnit
+        run: ./gradlew test -PexcludeTags=db   # seed가 git에 없어 db 태그 제외 (decisions D11)
 
       - name: coverage-report
         if: always()
