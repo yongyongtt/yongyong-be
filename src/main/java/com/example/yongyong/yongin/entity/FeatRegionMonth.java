@@ -18,7 +18,10 @@ public class FeatRegionMonth {
   @jakarta.persistence.Id private Integer year;
   @jakarta.persistence.Id private Integer month;
   @jakarta.persistence.Id private String dongCd;
+  private Double taxiReq;
+  private Double taxiMatched;
   private Double taxiMatchRate;
+  private Double taxiUnmatchedRate;
   private Double fpAvg;
   private Boolean fpAnomaly;
 }

@@ -20,5 +20,6 @@ public class FeatCityMonth {
   private Double taxiReq;
   private Double taxiMatched;
   private Double taxiMatchRate;
+  private Double taxiUnmatchedRate;
   private Double fpAvg;
 }

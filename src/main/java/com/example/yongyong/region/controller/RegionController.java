@@ -5,6 +5,7 @@ import com.example.yongyong.common.response.ApiResponse;
 import com.example.yongyong.region.dto.RegionComparisonResponse;
 import com.example.yongyong.region.dto.RegionDetailResponse;
 import com.example.yongyong.region.dto.RegionPreviewResponse;
+import com.example.yongyong.region.dto.RegionTrendResponse;
 import com.example.yongyong.region.service.RegionMetricService;
 import com.example.yongyong.region.service.RegionService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -17,6 +18,7 @@ import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "지역")
@@ -59,5 +61,16 @@ public class RegionController {
           String regionCode,
       @Valid @ParameterObject PeriodQuery query) {
     return ApiResponse.ok(regionMetricService.getComparison(regionCode, query));
+  }
+
+  @Operation(summary = "미배차율 추이 조회")
+  @GetMapping("/{regionCode}/unmatched-trend")
+  public ApiResponse<RegionTrendResponse> getUnmatchedTrend(
+      @Parameter(description = "행정동 코드 10자리", example = "4146125000")
+          @PathVariable
+          @Pattern(regexp = "\\d{10}")
+          String regionCode,
+      @Parameter(description = "기준 연도", example = "2025") @RequestParam Integer year) {
+    return ApiResponse.ok(regionMetricService.getUnmatchedTrend(regionCode, year));
   }
 }
