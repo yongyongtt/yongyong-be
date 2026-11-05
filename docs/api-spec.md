@@ -166,7 +166,7 @@ Query: `year`, `month`
     "regionCode": "4146125000",
     "regionName": "포곡읍",
     "gu": "처인구",
-    "score": 60.4,
+    "score": 60,
     "rank": 7
   },
   "period": {
@@ -197,16 +197,17 @@ Query: `year`, `month`
 
 | 필드 | 출처 | 기간 |
 | --- | --- | --- |
-| header | `ml_priority.region_nm, gu, score_total, rank_total` | 고른 연·월 |
+| header | `ml_priority.region_nm, gu, score_total, rank_total`. `score`는 정수로 반올림 (decisions D12) | 고른 연·월 |
 | availableMonths | `SELECT DISTINCT month FROM ml_priority WHERE year = :year AND unit = 'dong'` | — |
 | type.name, desc | `ml_region.type_nm`, `type_desc` | 연간 |
 | type.chips | `ml_region.type_chips` (JSON 문자열 배열, 그대로) | 연간 |
-| sameTypeRegions | `ml_region`에서 같은 `year, type_nm`인 다른 지역 (`unit = 'dong'`). 이름은 `ml_priority`(연간 행)의 `region_nm`. 정렬: `rank_total` | 연간 |
+| sameTypeRegions | `ml_region`에서 같은 `year, type_nm`인 다른 지역 (`unit = 'dong'`). 이름은 `ml_priority`(연간 행)의 `region_nm`. 정렬: `rank_total`, `region_cd` | 연간 |
 | reliability | `ml_region.low_reliability`(1 → true), `reliability_note` | 연간 |
 
 - (i) 유형 안내 모달 6종은 프론트 고정 문구 → 응답에 없음
 - 행정동은 현재 전부 `low_reliability = 0`이라 항상 `{ "low": false, "note": null }`
-- 에러: `REGION_NOT_FOUND`, `PERIOD_NOT_FOUND`
+- `ml_region` 행이 없으면 404가 아니라 `type`은 null, `reliability`는 `{ "low": false, "note": null }`
+- 에러: 3번과 같은 기준의 `REGION_NOT_FOUND`, `PERIOD_NOT_FOUND`
 
 ---
 
