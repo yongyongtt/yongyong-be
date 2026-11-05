@@ -1,4 +1,4 @@
-package com.example.yongyong.global.config;
+package com.example.yongyong.common.config;
 
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
@@ -8,10 +8,8 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class SwaggerConfig {
 
-    @Bean
-    public OpenAPI openAPI() {
-        return new OpenAPI().info(new Info()
-                .title("용인 교통 사각지대 서비스 API")
-                .version("v1"));
-    }
+  @Bean
+  public OpenAPI openAPI() {
+    return new OpenAPI().info(new Info().title("용인 교통 사각지대 서비스 API").version("v1"));
+  }
 }
