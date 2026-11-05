@@ -224,22 +224,22 @@ Query: `year`, `month`
       "key": "TAXI_MATCH_RATE",
       "label": "택시 호출 성사율",
       "unit": "%",
-      "region": 53.4,
-      "cityAvg": 53.8
+      "region": 53,
+      "cityAvg": 54
     },
     {
       "key": "BUS_STOP_COUNT",
       "label": "버스 정류장 수",
       "unit": "개",
       "region": 148,
-      "cityAvg": 81.6
+      "cityAvg": 82
     },
     {
       "key": "ELDERLY_RATIO",
       "label": "고령인구 비율",
       "unit": "%",
-      "region": 19.8,
-      "cityAvg": 17.7
+      "region": 20,
+      "cityAvg": 18
     },
     {
       "key": "FLOATING_POP",
@@ -260,10 +260,11 @@ Query: `year`, `month`
 | FLOATING_POP | 월 `feat_region_month.fp_avg` / 연간 `feat_region.fp_avg` | 월 `feat_city_month.fp_avg` / 연간 `AVG(feat_city_month.fp_avg)` | 월별 |
 
 - 조건: `feat_region`은 `year = :year AND dong_cd = :regionCode`, `feat_region_month`는 `year, month, dong_cd`
-- 비율(0~1)은 ×100, 소수 첫째 자리. 생활인구는 정수로 반올림
+- 모든 지표는 소수점 없이 정수로 반올림한다. 비율(0~1)은 ×100 후 반올림 (decisions D14)
 - `feat_region_month.fp_anomaly = 1`인 달은 FLOATING_POP의 `region`을 null
 - 순서는 위 표 순서로 고정
-- 에러: `feat_region`에 지역이 없으면 `REGION_NOT_FOUND`, 월을 골랐는데 `feat_region_month` 행이 없으면 `PERIOD_NOT_FOUND`
+- 시 평균 행(`feat_city`, `feat_city_month`)이 없으면 404가 아니라 해당 지표의 `cityAvg`만 null
+- 에러: 연도 데이터가 아예 없으면 `PERIOD_NOT_FOUND`, 연도는 있는데 지역이 없으면 `REGION_NOT_FOUND`, 월을 골랐는데 `feat_region_month` 행이 없으면 `PERIOD_NOT_FOUND`
 
 ---
 
