@@ -124,7 +124,7 @@ Query: `year`, `month`
   "regionCode": "4146125000",
   "regionName": "포곡읍",
   "gu": "처인구",
-  "score": 60.4,
+  "score": 60,
   "rank": 7,
   "type": {
     "name": "정류장 접근 취약형",
@@ -143,14 +143,14 @@ Query: `year`, `month`
 
 | 필드 | 출처 |
 | --- | --- |
-| regionName, gu, score, rank | `ml_priority.region_nm, gu, score_total, rank_total` (연간 `month IS NULL` / 월 `month = :month`) |
+| regionName, gu, score, rank | `ml_priority.region_nm, gu, score_total, rank_total` (연간 `month IS NULL` / 월 `month = :month`). `score`는 정수로 반올림 (decisions D12) |
 | type | `ml_region.type_nm`, `type_desc` (연간만) |
 | recommended | `ml_explanation.options` 중 `status = '추천'`인 항목의 `mode`, `name` (1~2개, options 순서대로) |
 | isKeep | `ml_explanation.is_keep = 1`. 이때 recommended는 `{ "mode": "KEEP", "name": "현행 유지" }` 하나 |
 | summary | `ml_explanation.summary` |
 
-- `ml_region`·`ml_explanation` 행이 없으면 `type`, `recommended`, `summary`는 null (404 아님)
-- 에러: `ml_priority`에 지역이 없으면 `REGION_NOT_FOUND`, 그 월 행이 없으면 `PERIOD_NOT_FOUND`
+- `ml_region`·`ml_explanation` 행이 없으면 `type`, `recommended`, `summary`는 null, `isKeep`은 false (404 아님)
+- 에러: 연도 데이터가 아예 없으면 `PERIOD_NOT_FOUND`, 연도는 있는데 지역이 없으면 `REGION_NOT_FOUND`, 지역은 있는데 그 월 행이 없으면 `PERIOD_NOT_FOUND`
 
 ---
 

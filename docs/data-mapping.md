@@ -115,7 +115,7 @@ API에 `unit` 파라미터는 없다. 아래 `unit` 조건에는 서비스가 �
 
 | 컬럼 | 타입 | 설명 |
 | --- | --- | --- |
-| is_keep | tinyint | 1이면 현행 유지 지역 (행정동은 현재 0개) |
+| is_keep | tinyint | 1이면 현행 유지 지역 (행정동 38개 중 9개) |
 | options | text(JSON) | 대안 카드 배열 (아래 구조) |
 | reasons, cautions | text(JSON) | 문자열 배열 1~3개 |
 | summary | text | 한 줄 요약 (45자 이내) |
