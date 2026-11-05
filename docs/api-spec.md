@@ -13,8 +13,8 @@
 | --- | --- | --- | --- |
 | `year` | O | 2025 | 기준 연도 |
 | `month` | X | 1~12 | 없으면 연간(전체) = `month IS NULL` 행. 받는 API만 해당 |
-| `unit` | X | `dong`(기본) / `village` | 이번 범위는 `dong`만. `village`는 `INVALID_REQUEST` |
 
+- `unit` 파라미터는 없다. 서버가 항상 `unit = 'dong'`으로 조회한다 (decisions D6)
 - 아래 "출처"의 `month IS NULL` 조건은 DB 기준 설명이다. 코드에서는 `MlPriority` 엔티티의 `monthKey`(0 = 연간, 1~12 = 월)로 조회한다 (data-mapping.md "엔티티 매핑")
 - `regionCode`: 행정동 코드 10자리 (`ml_*.region_cd` = `feat_*.dong_cd`), 예 `4146125000`
 - 비율은 % (0~100, 소수 첫째 자리), 점수는 0~100 DB 값 그대로
@@ -35,7 +35,7 @@
 
 상단 KPI 3개 + 우선 해결 TOP 10 + 기준 연·월 목록·최종 갱신일. 월을 바꾸면 KPI와 TOP10이 그 달 행 기준으로 바뀐다.
 
-Query: `year`, `month`, `unit`
+Query: `year`, `month`
 
 ```json
 {
@@ -65,15 +65,15 @@ Query: `year`, `month`, `unit`
 
 | 필드 | 출처 |
 | --- | --- |
-| availableYears | `SELECT DISTINCT year FROM ml_priority WHERE unit = :unit` |
-| availableMonths | `SELECT DISTINCT month FROM ml_priority WHERE year = :year AND unit = :unit` (null = 연간, null을 맨 앞에) |
+| availableYears | `SELECT DISTINCT year FROM ml_priority WHERE unit = 'dong'` |
+| availableMonths | `SELECT DISTINCT month FROM ml_priority WHERE year = :year AND unit = 'dong'` (null = 연간, null을 맨 앞에) |
 | updatedAt | `MAX(ml_model_info.trained_at) WHERE year = :year` |
 | regionCount | `COUNT(*) FROM ml_priority` |
 | vulnerableCount | `SUM(ml_priority.is_vulnerable)` (score_total 50점 이상) |
 | avgScore | `AVG(ml_priority.score_total)`, 소수 첫째 자리 |
 | top10 | `rank_total, region_cd, region_nm, gu, score_total` ORDER BY `rank_total` LIMIT 10 |
 
-공통 조건: `year = :year AND unit = :unit` + 연간 `month IS NULL` / 월 `month = :month`
+공통 조건: `year = :year AND unit = 'dong'` + 연간 `month IS NULL` / 월 `month = :month`
 에러: 그 연·월 행이 0개면 `PERIOD_NOT_FOUND`
 메모: 현재 월별 값은 2월만 있고 나머지 달은 추후 적재. availableMonths는 DB 기준이라 자동으로 늘어난다
 
@@ -83,7 +83,7 @@ Query: `year`, `month`, `unit`
 
 읍·면·동 38개 종합 취약도 지도 색칠.
 
-Query: `year`, `month`, `unit`
+Query: `year`, `month`
 
 ```json
 {
@@ -117,7 +117,7 @@ Query: `year`, `month`, `unit`
 
 지도·TOP10에서 지역을 고르면 나오는 우측 패널. 월을 바꾸면 점수·순위만 바뀌고 유형·추천은 연간 그대로.
 
-Query: `year`, `month`, `unit`
+Query: `year`, `month`
 
 ```json
 {
@@ -158,7 +158,7 @@ Query: `year`, `month`, `unit`
 
 상세 상단: 지역명·구·점수·순위 배지(연간/월), 기준 월 목록, 사각지대 유형·칩·같은 유형 지역(연간), 신뢰도 낮음 배지·배너.
 
-Query: `year`, `month`, `unit`
+Query: `year`, `month`
 
 ```json
 {
@@ -198,10 +198,10 @@ Query: `year`, `month`, `unit`
 | 필드 | 출처 | 기간 |
 | --- | --- | --- |
 | header | `ml_priority.region_nm, gu, score_total, rank_total` | 고른 연·월 |
-| availableMonths | `SELECT DISTINCT month FROM ml_priority WHERE year = :year AND unit = :unit` | — |
+| availableMonths | `SELECT DISTINCT month FROM ml_priority WHERE year = :year AND unit = 'dong'` | — |
 | type.name, desc | `ml_region.type_nm`, `type_desc` | 연간 |
 | type.chips | `ml_region.type_chips` (JSON 문자열 배열, 그대로) | 연간 |
-| sameTypeRegions | `ml_region`에서 같은 `year, unit, type_nm`인 다른 지역. 이름은 `ml_priority`(연간 행)의 `region_nm`. 정렬: `rank_total` | 연간 |
+| sameTypeRegions | `ml_region`에서 같은 `year, type_nm`인 다른 지역 (`unit = 'dong'`). 이름은 `ml_priority`(연간 행)의 `region_nm`. 정렬: `rank_total` | 연간 |
 | reliability | `ml_region.low_reliability`(1 → true), `reliability_note` | 연간 |
 
 - (i) 유형 안내 모달 6종은 프론트 고정 문구 → 응답에 없음
@@ -214,7 +214,7 @@ Query: `year`, `month`, `unit`
 
 '시 평균과 비교' 카드 4개 지표. 시 평균은 계산하지 않고 `feat_city`·`feat_city_month`에서 읽는다 (택시 성사율·생활인구 연간 값만 아래 식으로 집계).
 
-Query: `year`, `month`, `unit`
+Query: `year`, `month`
 
 ```json
 {
@@ -270,7 +270,7 @@ Query: `year`, `month`, `unit`
 
 '미배차율 추이' 라인차트(이 지역 vs 용인시 평균 점선) + 호버 툴팁. 그 연도에 DB에 있는 달을 모두 내린다.
 
-Query: `year`, `unit` (month 없음)
+Query: `year` (month 없음)
 
 ```json
 {
@@ -313,7 +313,7 @@ Query: `year`, `unit` (month 없음)
 
 'AI 추천 해결방안' 전체. `ml_explanation`은 연간만 있어 월 선택과 무관.
 
-Query: `year`, `unit`
+Query: `year`
 
 ```json
 {

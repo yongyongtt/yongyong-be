@@ -1,6 +1,6 @@
 # CLAUDE.md — 용인 교통 사각지대 진단 백엔드
 
-RULES_VERSION: R1  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 변경 이력"에 한 줄 남긴다)
+RULES_VERSION: R2  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 변경 이력"에 한 줄 남긴다)
 
 이 파일은 이 저장소에서 일하는 Claude가 매번 따라야 하는 규칙이다.
 규칙과 다른 방법이 더 낫다고 판단되면, 바로 바꾸지 말고 사용자에게 먼저 제안한다.
@@ -33,9 +33,11 @@ RULES_VERSION: R1  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 �
 
 ## 1. 기술 기준
 
-- Java 21, Spring Boot 3.3 이상, Gradle
+- Java 21, Spring Boot 4.1.2, Gradle 9.8.2 (실제 버전은 build.gradle 기준)
 - DB: MariaDB `yongin` (Python이 적재, Spring은 **읽기 전용**). INSERT/UPDATE/DELETE 쿼리를 쓰지 않는다
-- DB 접근: **Spring Data JPA, 읽기 전용 엔티티** (decisions D1). 기존 프로젝트의 엔티티 작성 방식(`@Table(schema = "yongin", ...)`)을 따른다
+- 기본 접속 DB는 `yongin_app`이다. 앱 계정은 `yongin`에 `SELECT`만, `yongin_app`에 `SELECT, INSERT, UPDATE, DELETE`를 가진다. 테이블 생성은 root로 한다
+- `.env`의 값은 사용자가 직접 적고, Claude는 이 파일을 읽지 않는다
+- DB 접근: **Spring Data JPA, 읽기 전용 엔티티** (decisions D1). 엔티티는 `@Table(catalog = "yongin", name = "...")`로 DB를 지정한다. MariaDB Dialect는 `catalog`만 한정자로 지원하므로 `schema`를 쓰지 않는다
 - `spring.jpa.hibernate.ddl-auto=none` 고정. `yongin` 스키마를 Hibernate가 만들거나 검사하지 않게 한다 (`update`, `create`, `validate` 금지)
 - 테스트: JUnit 5, AssertJ, Mockito, Spring Boot Test, Testcontainers(MariaDB), ArchUnit
 - 품질 도구: Spotless(google-java-format), JaCoCo(측정만, 기준 미달로 빌드를 막지 않음 — decisions D9)
@@ -45,9 +47,10 @@ RULES_VERSION: R1  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 �
 ```
 {base}                         // 실제 패키지명은 build.gradle의 group 기준
 ├─ common
-│  ├─ response    ApiResponse, ErrorBody
+│  ├─ response    ApiResponse (ErrorBody는 안쪽 record)
 │  ├─ exception   ErrorCode, BusinessException, GlobalExceptionHandler
-│  ├─ query       PeriodQuery(year, month, unit) 등 공통 요청 값
+│  ├─ config      SwaggerConfig, WebConfig
+│  ├─ query       PeriodQuery(year, month) 등 공통 요청 값
 │  └─ converter   JSON 컬럼용 AttributeConverter (StringListConverter, OptionListConverter)
 ├─ yongin         yongin DB 읽기 전용 엔티티 + repository (테이블당 하나, 여러 기능이 같이 씀)
 │  ├─ entity      MlPriority, MlRegion, MlExplanation, MlModelInfo,
@@ -86,10 +89,12 @@ RULES_VERSION: R1  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 �
 
 | 코드 | HTTP | 상황 |
 | --- | --- | --- |
-| `INVALID_REQUEST` | 400 | 파라미터 검증 실패 (year 없음, month 1~12 밖, unit 값 이상, regionCode 형식) |
-| `REGION_NOT_FOUND` | 404 | 그 연도·unit에 regionCode가 없음 |
+| `INVALID_REQUEST` | 400 | 파라미터 검증 실패 (year 없음, month 1~12 밖, regionCode 형식) |
+| `REGION_NOT_FOUND` | 404 | 그 연도에 regionCode가 없음 |
 | `PERIOD_NOT_FOUND` | 404 | 고른 연·월 데이터가 아직 적재되지 않음 (decisions D7) |
 | `RECOMMENDATION_NOT_FOUND` | 404 | `ml_explanation`에 그 지역 행이 없음 |
+| `RESOURCE_NOT_FOUND` | 404 | 없는 경로 |
+| `METHOD_NOT_ALLOWED` | 405 | 지원하지 않는 HTTP 메서드 |
 | `INTERNAL_ERROR` | 500 | 그 밖의 예외. 메시지에 내부 정보(SQL, 스택)를 담지 않는다 |
 
 ## 5. 데이터 규칙 (요약, 자세한 것은 docs/data-mapping.md)
@@ -117,7 +122,7 @@ RULES_VERSION: R1  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 �
 - 비율 컬럼(0~1)은 서버가 ×100 해서 % 값으로 내리고 **소수 첫째 자리 반올림**. 점수(0~100)는 DB 값 그대로
 - JSON 문자열 컬럼(`options`, `reasons`, `cautions`, `type_chips`)은 엔티티 필드에 `@Convert`로 `common.converter`의 AttributeConverter를 달아 `List`로 받는다. 변환기의 쓰기 방향(`convertToDatabaseColumn`)은 예외를 던진다 (읽기 전용)
 - `tinyint(1)` 컬럼(`is_vulnerable`, `is_keep`, `low_reliability`)은 `Boolean`으로 매핑한다. 그래서 개수는 `SUM` 대신 `count ... where p.isVulnerable = true`로 센다
-- 이번 범위는 `unit=dong`(행정동 38개)만 구현한다. `village` 요청은 `INVALID_REQUEST` (decisions D6)
+- 이번 범위는 행정동 38개만 구현한다. API에 `unit` 파라미터를 두지 않고, 서비스가 항상 `unit = "dong"`으로 조회한다 (decisions D6). DB에는 `village` 행도 있으니 `unit` 조건을 빼지 않는다
 
 ## 6. 작업 순서 (API 하나 = 작업 하나)
 
@@ -133,6 +138,8 @@ API 하나를 만들 때 아래 순서를 지킨다. 순서를 건너뛰지 않�
 
 브랜치: `feat/api-{번호}-{짧은이름}` (예: `feat/api-1-dashboard-summary`). main에 직접 커밋하지 않는다.
 커밋 메시지: `feat(api-1): 대시보드 요약 조회` 형식. Claude가 만든 커밋에는 `Co-Authored-By: Claude` 트레일러를 반드시 남긴다 (사람 수정 비율 계산에 쓴다).
+`*.sql`, `.env`, 비밀값은 커밋하지 않는다. `.gitignore`에 `*.sql`, `.env`, `CLAUDE.local.md`가 있는지 확인한다.
+사용자가 요청하기 전에는 push하지 않는다.
 
 ## 7. 작업 기록 규칙 (WORKLOG.md) — 매 작업 자동
 
@@ -184,14 +191,15 @@ API 하나당 최소 아래 세 종류를 만든다.
 | 서비스 | 순수 단위 테스트 (Mockito) | 변환 규칙: ×100·반올림, '추천'/'제외' → `RECOMMENDED`/`EXCLUDED`, 연간/월 분기, 데이터 없을 때 예외 |
 | repository | `@DataJpaTest` + `@AutoConfigureTestDatabase(replace = NONE)` + Testcontainers MariaDB | 엔티티 매핑과 쿼리 메서드가 seed 데이터에서 기대값을 내는지 |
 
-- seed: `src/test/resources/db/seed-dong-2025.sql` (11/5 덤프에서 행정동만 추린 것)
-- 컨테이너 DB 이름은 `yongin`으로 만든다 (`.withDatabaseName("yongin")`). 엔티티가 `schema = "yongin"`, `@Subselect`가 `yongin.ml_priority`를 가리키기 때문
-- MariaDB 컨테이너는 테스트 전체가 하나를 같이 쓴다 (공통 테스트 설정 클래스에 static 컨테이너 하나). 테스트 클래스마다 새로 띄우지 않는다
+- seed: `src/test/resources/db/seed-dong-2025.sql` (11/5 덤프에서 행정동만 추린 것). 공개 저장소라 git에 올리지 않는다 (decisions D11)
+- `@DataJpaTest` repository 테스트에는 `@Tag("db")`를 붙인다. CI는 `-PexcludeTags=db`로 이 태그를 빼고 돌고, 로컬 `./gradlew test`는 전부 돈다. CI가 repository 테스트를 대신 돌려주지 않으므로 PR 전에 로컬에서 전체 테스트를 통과시킨다
+- 컨테이너 DB 이름은 `yongin`으로 만든다 (`.withDatabaseName("yongin")`). 엔티티가 `catalog = "yongin"`, `@Subselect`가 `yongin.ml_priority`를 가리키기 때문
+- MariaDB 컨테이너는 테스트 전체가 하나를 같이 쓴다 (`MariaDbTestSupport`의 static 컨테이너 하나). 테스트 클래스마다 새로 띄우지 않는다
 - 엔티티를 새로 만들면 그 엔티티 repository 테스트에 매핑 확인을 넣는다: seed 행 수, 키 조회 1건, JSON·Boolean 필드 값 (특히 `MlPriority`는 `monthKey` 목록이 `[0, 2]`인지)
 - 기대값은 **seed에서 SQL로 직접 확인한 값만** 쓴다. 숫자를 추측하거나 명세 예시에서 그냥 베끼지 않는다. 확인에 쓴 SQL을 테스트 주석에 한 줄로 남긴다
 - 이미 확인된 기준값 (2025, dong, 연간): 지역 38개, 취약지역 9개, 평균 39.1, 1위 원삼면 68.1 / 포곡읍(4146125000) 60.4·7위 / 시 평균 택시 성사율 53.8%, 생활인구 5,938명, 정류장 81.6개, 고령 17.7%
 - 테스트 이름은 `@DisplayName`에 한글 문장으로: `"월을 고르면 그 달 점수와 순위를 내린다"`
-- 실패 케이스를 반드시 넣는다: 없는 regionCode, 범위 밖 month, 적재 안 된 month(예: 5월), `unit=village`
+- 실패 케이스를 반드시 넣는다: 없는 regionCode, 범위 밖 month, 적재 안 된 month(예: 5월)
 - 테스트도 간결하게: 정상 케이스 1~2개 + 위 실패 케이스면 충분하다. 같은 내용을 여러 층에서 반복 검증하지 않는다 (예: 파라미터 검증은 컨트롤러 테스트에서만, SQL 결과는 repository 테스트에서만)
 
 ## 9. 자동 검증 게이트 (CI)
@@ -199,7 +207,7 @@ API 하나당 최소 아래 세 종류를 만든다.
 GitHub Actions `ci.yml`이 PR마다 아래를 돌리고, 하나라도 실패하면 머지하지 않는다.
 
 1. `spotlessCheck` — 포맷
-2. `test` — 단위·통합 테스트 (Testcontainers)
+2. `test -PexcludeTags=db` — 단위·통합 테스트 (Testcontainers). seed가 필요한 `db` 태그 테스트는 제외 (decisions D11)
 3. ArchUnit 규칙 (test에 포함)
    - controller → service → repository 방향만 허용 (controller는 `yongin` 패키지에 의존 금지)
    - `@RestController`의 public 메서드 반환 타입은 `ApiResponse`
@@ -220,10 +228,11 @@ GitHub Actions `ci.yml`이 PR마다 아래를 돌리고, 하나라도 실패하�
 - 엔티티에 setter 추가, 엔티티를 컨트롤러 응답으로 직접 반환
 - 테스트를 통과시키려고 테스트 기대값을 바꾸기
 - 실패한 테스트를 `@Disabled`로 꺼서 우회하기
-- 비밀값(DB 비밀번호 등)을 코드나 `application.yml`에 넣기 (환경변수 사용)
+- 비밀값(DB 비밀번호 등)을 코드나 `application.properties`에 넣기 (환경변수 사용)
 
 ## 규칙 변경 이력
 
 | 날짜 | 버전 | 무엇을 | 왜 |
 | --- | --- | --- | --- |
 | 2026-11-05 | R1 | 최초 작성 (DB 접근은 JPA 읽기 전용 엔티티) | API 1~7 개발 시작 |
+| 2026-11-05 | R2 | Boot 4.1.2 기준, `schema`→`catalog`, `global`→`common`, 에러코드 정리, `unit` 파라미터 제거, seed 미커밋과 `db` 태그 CI 제외, old 안전 규칙 4개 복원 | 사용자 결정 (규칙과 실제 프로젝트 대조 결과), decisions D1·D6·D7·D11 |

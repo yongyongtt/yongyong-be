@@ -10,6 +10,7 @@
 - 예외: `ml_priority`는 연간 행의 `month`가 NULL이라, 복합키에 그대로 넣으면 Hibernate가 그 행을 엔티티로 만들지 못한다. `@Subselect`에서 `COALESCE(month, 0) AS month_key`로 바꿔 키로 쓴다 (0 = 연간)
 - 읽기 전용 보장: `@Immutable`, setter 없음, repository는 `Repository<T, ID>`만 상속(save/delete 없음), `ddl-auto=none`. ArchUnit으로 강제
 - 변경 (2026-11-05): 처음에는 "PK가 없어 JPA 불가"로 보고 JdbcClient를 골랐으나, PK 없는 것 자체는 문제가 아니고 실제 문제는 `ml_priority`의 NULL month 하나뿐이라 JPA로 변경
+- 변경 (2026-11-05): `@Table(schema = "yongin")` → `@Table(catalog = "yongin")` / MariaDB Dialect는 `catalog`만 한정자로 지원하고, 이 저장소에는 따를 기존 엔티티가 없다
 
 ## D2. 대시보드 지도는 종합 취약도 하나만
 - 상태: 확정 (2026-11-05)
@@ -30,15 +31,17 @@
 - 상태: 확정 (2026-11-05)
 - 이유: 결과 저장 위치(FastAPI가 `ml_explanation` 덮어쓰기 vs `yongin_app` 별도 테이블) 미정. 정해지면 `yongin_app` 필요 여부도 함께 결정
 
-## D6. 이번 범위는 행정동(unit=dong)만
-- 상태: 제안 (팀 확인 필요)
+## D6. 이번 범위는 행정동만, unit 파라미터 없음
+- 상태: 확정 (2026-11-05)
 - `unit` 파라미터는 받되 `village`는 `INVALID_REQUEST`로 막는다
 - 이유: 리는 `feat_village`·면 단위 값 등 매핑이 달라 별도 작업. 나중에 열 때 API 형태는 그대로
+- 변경 (2026-11-05): `village`를 `INVALID_REQUEST`로 막기 → `unit` 파라미터를 없애고 항상 `dong`으로 조회 / 사용자 결정. 상태도 제안 → 확정
 
 ## D7. 적재 안 된 연·월 요청은 404 PERIOD_NOT_FOUND
-- 상태: 제안 (팀 확인 필요)
+- 상태: 확정 (2026-11-05)
 - 고름: 404 + `PERIOD_NOT_FOUND` / 고르지 않음: 빈 목록 200
 - 이유: 2월만 있는 지금, 5월 요청에 빈 화면을 주면 "데이터 없음"과 "취약지역 0개"를 구분할 수 없다. 프론트는 `availableMonths`로 고를 수 있는 달만 보여준다
+- 변경 (2026-11-05): 상태 제안 → 확정 / 사용자 결정
 
 ## D8. 응답 형식 ApiResponse로 통일, 예외는 BusinessException + ControllerAdvice
 - 상태: 확정 (2026-11-05)
@@ -54,3 +57,8 @@
 - 고름: 클래스 하나짜리 서비스·repository, 인터페이스·추상화·Mapper 클래스 없음 / 고르지 않음: 확장을 대비한 계층·추상화
 - 이유: 해커톤 목표는 기한 내 동작하는 7개 API다. 코드가 짧을수록 AI가 만든 코드를 사람이 빨리 검토할 수 있고, 리뷰 비용이 줄어든다. 공통 규칙(응답 형식, 예외, 레이어 방향, 테스트 순서)은 유지한다
 - 세부: 같은 로직이 두 번 나오면 메서드로 뺀다. 캐싱은 필요할 때만 쓰고 이유를 여기 남긴다. Swagger는 이미 세팅된 설정을 따르고 API마다 요약·파라미터 설명만 단다 (프론트 공유용)
+
+## D11. seed는 git에 올리지 않고, repository 테스트는 CI에서 제외
+- 상태: 확정 (2026-11-05)
+- 고름: repository 테스트에 `@Tag("db")`, CI는 `./gradlew test -PexcludeTags=db`, 로컬 `./gradlew test`는 전부 실행 / 고르지 않음: `.gitignore` 예외로 seed 커밋
+- 이유: 저장소가 공개라 seed의 분석 데이터를 올리지 않는다. 대신 CI는 엔티티 매핑과 쿼리를 검증하지 못하므로 PR 전에 로컬 전체 테스트를 통과시킨다

@@ -1,7 +1,7 @@
 # yongin DB 데이터 매핑 (API 1~7용)
 
 기준 덤프: `yongin_2026-11-05.sql` (MariaDB 12.2). Python(ML 팀원)이 적재하고 Spring은 읽기만 한다.
-테스트용 seed: `src/test/resources/db/seed-dong-2025.sql` — 아래 8개 테이블, 행정동(`unit = 'dong'`) 행만.
+테스트용 seed: `src/test/resources/db/seed-dong-2025.sql` — 아래 8개 테이블, 행정동(`unit = 'dong'`) 행만. git에 올리지 않는다 (decisions D11).
 
 ## 공통 사항
 
@@ -70,6 +70,8 @@ public interface MlPriorityRepository extends Repository<MlPriority, MlPriority.
 ```
 
 ## 조회 조건 규칙
+
+API에 `unit` 파라미터는 없다. 아래 `unit` 조건에는 서비스가 항상 `"dong"`을 넘긴다 (decisions D6).
 
 | 테이블 묶음 | 연도 | 연간 / 월 | 지역 단위 | 지역 키 |
 | --- | --- | --- | --- | --- |
