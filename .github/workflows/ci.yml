@@ -1,0 +1,41 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # 각 단계를 나눠야 CI 실패 원인(포맷/테스트)을 metrics.sh가 구분할 수 있다
+      # 커버리지는 측정만 한다 (기준 미달로 실패시키지 않음, decisions D9)
+      - name: format
+        run: ./gradlew spotlessCheck
+
+      - name: test
+        run: ./gradlew test   # 단위·통합(Testcontainers)·ArchUnit
+
+      - name: coverage-report
+        if: always()
+        run: ./gradlew jacocoTestReport
+
+      - name: upload-reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            build/reports/tests/test
+            build/reports/jacoco/test
