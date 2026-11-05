@@ -105,7 +105,7 @@ Query: `year`, `month`
 | score | `ml_priority.score_total` (종합 취약도) |
 | rank | `ml_priority.rank_total` |
 
-- 조건은 1번과 같다. 정렬: `rank_total`
+- 조건은 1번과 같다. 정렬: `rank_total`, `region_cd` (decisions D12)
 - 종합 취약도만 내린다 (교통 수요·공급 부족도 없음)
 - 읍·면·동 검색은 이 응답의 38개를 프론트가 `regionName`으로 거른다 → 검색 API 없음
 - 색 구간(0~20, 20~40, …)은 프론트가 칠한다. 지도 경계는 프론트 정적 GeoJSON(`code` = regionCode)

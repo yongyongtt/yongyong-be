@@ -76,6 +76,21 @@ class DashboardRepositoryTest extends MariaDbTestSupport {
   }
 
   @Test
+  @DisplayName("지도에 쓰는 행은 기간마다 지역 코드가 겹치지 않고 표시 값이 모두 있다")
+  void mapRows() {
+    // SELECT COUNT(DISTINCT region_cd), SUM(gu IS NULL OR region_nm IS NULL OR rank_total IS NULL)
+    //   FROM ml_priority WHERE year=2025 AND unit='dong' GROUP BY COALESCE(month, 0); -- 38, 0
+    for (int monthKey : new int[] {0, 2}) {
+      List<MlPriority> rows = rows(monthKey);
+
+      assertThat(rows).extracting(MlPriority::getRegionCd).doesNotHaveDuplicates().hasSize(38);
+      assertThat(rows).extracting(MlPriority::getRegionNm).doesNotContainNull();
+      assertThat(rows).extracting(MlPriority::getGu).doesNotContainNull();
+      assertThat(rows).extracting(MlPriority::getRankTotal).doesNotContainNull();
+    }
+  }
+
+  @Test
   @DisplayName("적재되지 않은 5월은 행이 0개다")
   void monthNotLoaded() {
     // SELECT COUNT(*) FROM ml_priority WHERE year=2025 AND month=5 AND unit='dong'; -- 0

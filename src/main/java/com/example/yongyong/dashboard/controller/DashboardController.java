@@ -2,6 +2,7 @@ package com.example.yongyong.dashboard.controller;
 
 import com.example.yongyong.common.query.PeriodQuery;
 import com.example.yongyong.common.response.ApiResponse;
+import com.example.yongyong.dashboard.dto.DashboardMapResponse;
 import com.example.yongyong.dashboard.dto.DashboardResponse;
 import com.example.yongyong.dashboard.service.DashboardService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -25,5 +26,11 @@ public class DashboardController {
   @GetMapping
   public ApiResponse<DashboardResponse> getDashboard(@Valid @ParameterObject PeriodQuery query) {
     return ApiResponse.ok(dashboardService.getDashboard(query));
+  }
+
+  @Operation(summary = "취약도 지도 조회")
+  @GetMapping("/map")
+  public ApiResponse<DashboardMapResponse> getMap(@Valid @ParameterObject PeriodQuery query) {
+    return ApiResponse.ok(dashboardService.getMap(query));
   }
 }

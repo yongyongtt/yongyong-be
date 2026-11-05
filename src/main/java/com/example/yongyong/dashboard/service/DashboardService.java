@@ -3,6 +3,7 @@ package com.example.yongyong.dashboard.service;
 import com.example.yongyong.common.exception.BusinessException;
 import com.example.yongyong.common.exception.ErrorCode;
 import com.example.yongyong.common.query.PeriodQuery;
+import com.example.yongyong.dashboard.dto.DashboardMapResponse;
 import com.example.yongyong.dashboard.dto.DashboardResponse;
 import com.example.yongyong.yongin.entity.MlPriority;
 import com.example.yongyong.yongin.repository.MlModelInfoRepository;
@@ -21,7 +22,7 @@ public class DashboardService {
 
   private static final String UNIT_DONG = "dong";
   private static final int TOP_LIMIT = 10;
-  private static final Comparator<MlPriority> TOP_ORDER =
+  private static final Comparator<MlPriority> RANK_ORDER =
       Comparator.comparing(MlPriority::getRankTotal).thenComparing(MlPriority::getRegionCd);
 
   private final MlPriorityRepository mlPriorityRepository;
@@ -29,11 +30,7 @@ public class DashboardService {
 
   public DashboardResponse getDashboard(PeriodQuery query) {
     Integer year = query.year();
-    List<MlPriority> rows =
-        mlPriorityRepository.findByYearAndMonthKeyAndUnit(year, query.monthKey(), UNIT_DONG);
-    if (rows.isEmpty()) {
-      throw new BusinessException(ErrorCode.PERIOD_NOT_FOUND);
-    }
+    List<MlPriority> rows = findRows(query);
 
     List<PeriodKey> periods = mlPriorityRepository.findPeriods(UNIT_DONG);
     return new DashboardResponse(
@@ -50,7 +47,31 @@ public class DashboardService {
             rows.size(),
             rows.stream().filter(MlPriority::getIsVulnerable).count(),
             averageScore(rows)),
-        rows.stream().sorted(TOP_ORDER).limit(TOP_LIMIT).map(this::toTopRegion).toList());
+        rows.stream().sorted(RANK_ORDER).limit(TOP_LIMIT).map(this::toTopRegion).toList());
+  }
+
+  public DashboardMapResponse getMap(PeriodQuery query) {
+    return new DashboardMapResponse(
+        findRows(query).stream().sorted(RANK_ORDER).map(this::toMapRegion).toList());
+  }
+
+  private List<MlPriority> findRows(PeriodQuery query) {
+    List<MlPriority> rows =
+        mlPriorityRepository.findByYearAndMonthKeyAndUnit(
+            query.year(), query.monthKey(), UNIT_DONG);
+    if (rows.isEmpty()) {
+      throw new BusinessException(ErrorCode.PERIOD_NOT_FOUND);
+    }
+    return rows;
+  }
+
+  private DashboardMapResponse.MapRegion toMapRegion(MlPriority priority) {
+    return new DashboardMapResponse.MapRegion(
+        priority.getRegionCd(),
+        priority.getRegionNm(),
+        priority.getGu(),
+        priority.getScoreTotal(),
+        priority.getRankTotal());
   }
 
   private double averageScore(List<MlPriority> rows) {
