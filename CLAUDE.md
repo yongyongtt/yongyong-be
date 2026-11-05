@@ -1,6 +1,6 @@
 # CLAUDE.md — 용인 교통 사각지대 진단 백엔드
 
-RULES_VERSION: R2  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 변경 이력"에 한 줄 남긴다)
+RULES_VERSION: R3  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 변경 이력"에 한 줄 남긴다)
 
 이 파일은 이 저장소에서 일하는 Claude가 매번 따라야 하는 규칙이다.
 규칙과 다른 방법이 더 낫다고 판단되면, 바로 바꾸지 말고 사용자에게 먼저 제안한다.
@@ -112,16 +112,16 @@ RULES_VERSION: R2  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 �
 
 **조회 규칙**
 - repository는 `org.springframework.data.repository.Repository<T, ID>`를 상속하고 **조회 메서드만** 선언한다. `JpaRepository`·`CrudRepository`를 쓰지 않는다 (save/delete가 아예 없게)
-- 파생 쿼리(`findByYearAndUnitAndRegionCd`)를 먼저 쓰고, 집계(`count`, `avg`, `distinct`)는 JPQL `@Query`로 쓴다. 네이티브 쿼리는 JPQL로 안 될 때만, 이유를 주석 한 줄로
+- 파생 쿼리(`findByYearAndUnitAndRegionCd`)를 먼저 쓴다. 행 수가 적은 조회(행정동 38개 수준)는 행을 읽고, 이미 읽어 온 행으로 구할 수 있는 값은 서비스에서 계산하고, 값만 따로 필요하면 max·count·avg·distinct 같은 집계는 JPQL `@Query`로 쓴다 (decisions D13). 네이티브 쿼리는 JPQL로 안 될 때만, 이유를 주석 한 줄로
 - 쿼리 문자열을 이어붙여 만들지 않는다. 파라미터는 항상 바인딩
 - 서비스 클래스에 `@Transactional(readOnly = true)`
 
 **조회 조건·값**
 - `ml_` 조회 조건: `year`, `unit`, `regionCd` + `ml_priority`만 `monthKey`. `ml_region`, `ml_explanation`에는 month가 없다 → 월을 골라도 연간 값을 쓴다
 - `feat_` 테이블은 키가 다르다: 지역 = `dongCd`, 연간 값은 `FeatRegion`(month 없음), 월별 값은 `FeatRegionMonth`(year, month)
-- 비율 컬럼(0~1)은 서버가 ×100 해서 % 값으로 내리고 **소수 첫째 자리 반올림**. 점수(0~100)는 DB 값 그대로
+- 비율 컬럼(0~1)은 서버가 ×100 해서 % 값으로 내리고 **소수 첫째 자리 반올림**. 점수(0~100)는 DB 값 그대로. 단, API 1 TOP 10 `score`는 정수로 반올림 (decisions D12)
 - JSON 문자열 컬럼(`options`, `reasons`, `cautions`, `type_chips`)은 엔티티 필드에 `@Convert`로 `common.converter`의 AttributeConverter를 달아 `List`로 받는다. 변환기의 쓰기 방향(`convertToDatabaseColumn`)은 예외를 던진다 (읽기 전용)
-- `tinyint(1)` 컬럼(`is_vulnerable`, `is_keep`, `low_reliability`)은 `Boolean`으로 매핑한다. 그래서 개수는 `SUM` 대신 `count ... where p.isVulnerable = true`로 센다
+- `tinyint(1)` 컬럼(`is_vulnerable`, `is_keep`, `low_reliability`)은 `Boolean`으로 매핑한다. 그래서 개수는 `SUM` 대신 서비스에서 `Boolean` 값으로 걸러 센다 (decisions D13)
 - 이번 범위는 행정동 38개만 구현한다. API에 `unit` 파라미터를 두지 않고, 서비스가 항상 `unit = "dong"`으로 조회한다 (decisions D6). DB에는 `village` 행도 있으니 `unit` 조건을 빼지 않는다
 
 ## 6. 작업 순서 (API 하나 = 작업 하나)
@@ -238,3 +238,4 @@ GitHub Actions `ci.yml`이 PR마다 아래를 돌리고, 하나라도 실패하�
 | --- | --- | --- | --- |
 | 2026-11-05 | R1 | 최초 작성 (DB 접근은 JPA 읽기 전용 엔티티) | API 1~7 개발 시작 |
 | 2026-11-05 | R2 | Boot 4.1.2 기준, `schema`→`catalog`, `global`→`common`, 에러코드 정리, `unit` 파라미터 제거, seed 미커밋과 `db` 태그 CI 제외, old 안전 규칙 4개 복원 | 사용자 결정 (규칙과 실제 프로젝트 대조 결과), decisions D1·D6·D7·D11 |
+| 2026-11-05 | R3 | 행 수가 적은 조회는 읽어 온 행으로 서비스에서 계산, 값만 따로 필요하면 max·count·avg·distinct 같은 집계는 JPQL | 사용자 지적 (API 1 `MlPriorityRepository` 메서드 과다), decisions D13 |
