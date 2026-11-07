@@ -33,7 +33,11 @@ jobs:
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
-        run: ssh -i ~/.ssh/deploy_key "$SERVER_USER@$SERVER_HOST" 'cd ~/app && ./scripts/deploy.sh'
+        # Update to main first so the new deploy.sh runs, not the copy already on the server
+        run: >-
+          ssh -i ~/.ssh/deploy_key "$SERVER_USER@$SERVER_HOST"
+          'cd ~/app && git fetch -q origin main && git checkout -q main
+          && git merge -q --ff-only origin/main && ./scripts/deploy.sh'
 
       - name: ssh-cleanup
         if: always()

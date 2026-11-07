@@ -45,7 +45,9 @@ main에 push → `ci` 통과 → `deploy` 워크플로가 SSH로 접속해 `scri
 cd ~/app && ./scripts/deploy.sh
 ```
 
-스크립트가 하는 일: `yong-app:latest` → `yong-app:prev` 태그 → main으로 이동·fast-forward → `up -d --build` → nginx reload → `/health` 확인(최대 60초) → 실패하면 prev로 롤백하고 실패로 끝남.
+스크립트가 하는 일: `yong-app:latest` → `yong-app:prev` 태그 → main으로 이동·fast-forward → `up -d --build` → nginx 재생성(`--force-recreate`) → `/health` 3회 연속 성공 확인(최대 60초) → 실패하면 prev로 롤백하고 실패로 끝남.
+
+nginx는 reload가 아니라 재생성한다: `git checkout`이 `nginx/` 폴더를 지웠다 다시 만들면, 떠 있는 컨테이너는 지워진 빈 폴더를 계속 마운트하고 있어 reload 시 80 포트가 닫힌다.
 
 롤백만 따로 할 때:
 
