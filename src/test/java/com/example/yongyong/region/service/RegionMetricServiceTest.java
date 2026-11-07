@@ -62,7 +62,7 @@ class RegionMetricServiceTest {
   @DisplayName("월을 고르면 택시와 생활인구만 그 달 값이고 정류장과 고령은 연간 값이다")
   void monthly() {
     givenRegion();
-    givenRegionMonth(0.6344, 9557.2, false);
+    givenRegionMonth(0.6344, 9557.2);
     givenCity();
     givenCityMonths();
 
@@ -93,23 +93,6 @@ class RegionMetricServiceTest {
   }
 
   @Test
-  @DisplayName("fp_anomaly가 1인 달은 생활인구 region만 null이고 시 평균은 내린다")
-  void floatingPopAnomaly() {
-    givenRegion();
-    givenRegionMonth(0.6344, 56760.7, true);
-    givenCity();
-    givenCityMonths();
-
-    RegionComparisonResponse response =
-        regionMetricService.getComparison(CODE, new PeriodQuery(2025, 2));
-
-    Metric floatingPop = response.metrics().getLast();
-    assertThat(floatingPop.region()).isNull();
-    assertThat(floatingPop.cityAvg()).isEqualTo(6129);
-    assertThat(response.metrics().getFirst().region()).isEqualTo(63);
-  }
-
-  @Test
   @DisplayName("시 평균 행이 없으면 404가 아니라 cityAvg만 null로 내린다")
   void cityMissing() {
     givenRegion();
@@ -131,7 +114,7 @@ class RegionMetricServiceTest {
   @DisplayName("고른 달의 시 평균 행만 없으면 그 달 지표의 cityAvg만 null로 내린다")
   void cityMonthMissing() {
     givenRegion();
-    givenRegionMonth(0.6344, 9557.2, false);
+    givenRegionMonth(0.6344, 9557.2);
     givenCity();
     given(featCityMonthRepository.findByYear(2025))
         .willReturn(List.of(cityMonth(1, 100.0, 50.0, 0.5, 5871.0)));
@@ -263,11 +246,10 @@ class RegionMetricServiceTest {
     given(featRegionRepository.findByYearAndDongCd(2025, CODE)).willReturn(Optional.of(region));
   }
 
-  private void givenRegionMonth(double matchRate, double fpAvg, boolean anomaly) {
+  private void givenRegionMonth(double matchRate, double fpAvg) {
     FeatRegionMonth month = new FeatRegionMonth();
     ReflectionTestUtils.setField(month, "taxiMatchRate", matchRate);
     ReflectionTestUtils.setField(month, "fpAvg", fpAvg);
-    ReflectionTestUtils.setField(month, "fpAnomaly", anomaly);
     given(featRegionMonthRepository.findByYearAndMonthAndDongCd(2025, 2, CODE))
         .willReturn(Optional.of(month));
   }

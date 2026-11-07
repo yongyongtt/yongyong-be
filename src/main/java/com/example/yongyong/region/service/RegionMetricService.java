@@ -56,8 +56,7 @@ public class RegionMetricService {
       Optional<FeatCityMonth> cityMonth = findCityMonth(cityMonths, query.month());
       regionMatchRate = regionMonth.getTaxiMatchRate();
       cityMatchRate = cityMonth.map(FeatCityMonth::getTaxiMatchRate).orElse(null);
-      regionFloatingPop =
-          Boolean.TRUE.equals(regionMonth.getFpAnomaly()) ? null : regionMonth.getFpAvg();
+      regionFloatingPop = regionMonth.getFpAvg();
       cityFloatingPop = cityMonth.map(FeatCityMonth::getFpAvg).orElse(null);
     }
 

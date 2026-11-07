@@ -261,7 +261,7 @@ Query: `year`, `month`
 
 - 조건: `feat_region`은 `year = :year AND dong_cd = :regionCode`, `feat_region_month`는 `year, month, dong_cd`
 - 모든 지표는 소수점 없이 정수로 반올림한다. 비율(0~1)은 ×100 후 반올림 (decisions D14)
-- `feat_region_month.fp_anomaly = 1`인 달은 FLOATING_POP의 `region`을 null
+- FLOATING_POP은 `feat_region_month.fp_anomaly`와 관계없이 원본 `fp_avg`를 그대로 쓴다 (빼는 달 없음)
 - 순서는 위 표 순서로 고정
 - 시 평균 행(`feat_city`, `feat_city_month`)이 없으면 404가 아니라 해당 지표의 `cityAvg`만 null
 - 에러: 연도 데이터가 아예 없으면 `PERIOD_NOT_FOUND`, 연도는 있는데 지역이 없으면 `REGION_NOT_FOUND`, 월을 골랐는데 `feat_region_month` 행이 없으면 `PERIOD_NOT_FOUND`
