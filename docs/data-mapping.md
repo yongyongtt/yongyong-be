@@ -165,8 +165,7 @@ options 항목 구조 (DB 원문 키)
 | year, month, dong_cd | 키 |
 | taxi_req, taxi_matched | 택시 호출 수, 배차 성공 수 |
 | taxi_match_rate, taxi_unmatched_rate | 0~1 |
-| fp_avg | 생활인구 |
-| fp_anomaly | 1이면 그 달 생활인구 값을 쓰지 않음 |
+| fp_avg | 생활인구 (이상치 표시와 관계없이 원본 값) |
 
 ### feat_city — 시 평균 연간 (API 5)
 `year`, `unit`, `n_stops`(2025 dong 81.6), `elderly_ratio`(0.1774)

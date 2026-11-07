@@ -23,5 +23,4 @@ public class FeatRegionMonth {
   private Double taxiMatchRate;
   private Double taxiUnmatchedRate;
   private Double fpAvg;
-  private Boolean fpAnomaly;
 }

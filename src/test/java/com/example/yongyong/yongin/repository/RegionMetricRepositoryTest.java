@@ -50,23 +50,14 @@ class RegionMetricRepositoryTest extends MariaDbTestSupport {
   }
 
   @Test
-  @DisplayName("feat_region_month를 키로 조회하고 Boolean을 매핑한다")
+  @DisplayName("feat_region_month를 키로 조회한다")
   void featRegionMonth() {
-    // SELECT taxi_match_rate, fp_avg, fp_anomaly FROM feat_region_month WHERE dong_cd='4146125000'
+    // SELECT taxi_match_rate, fp_avg FROM feat_region_month WHERE dong_cd='4146125000'
     // AND month=2;
     FeatRegionMonth february =
         featRegionMonthRepository.findByYearAndMonthAndDongCd(2025, 2, POGOK).orElseThrow();
     assertThat(february.getTaxiMatchRate()).isEqualTo(0.6344);
     assertThat(february.getFpAvg()).isEqualTo(9557.2);
-    assertThat(february.getFpAnomaly()).isFalse();
-
-    // SELECT fp_anomaly FROM feat_region_month WHERE dong_cd='4146153000' AND month=10; -- 1
-    assertThat(
-            featRegionMonthRepository
-                .findByYearAndMonthAndDongCd(2025, 10, "4146153000")
-                .orElseThrow()
-                .getFpAnomaly())
-        .isTrue();
   }
 
   @Test
