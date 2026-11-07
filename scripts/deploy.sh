@@ -26,14 +26,17 @@ echo "deploying $(git rev-parse --short HEAD)"
 
 # up waits for app to be healthy before starting nginx, so a broken app fails here
 docker compose up -d --build || rollback "compose up"
-# nginx is not recreated when only nginx.conf changes
-docker compose exec -T nginx nginx -s reload || rollback "nginx reload"
+# Recreate nginx every time: a reload keeps the old bind mount if git replaced the nginx/ directory
+docker compose up -d --force-recreate --no-deps nginx || rollback "nginx recreate"
 
-for _ in $(seq 1 12); do
-  if curl -fsS -o /dev/null "$HEALTH_URL"; then
+# Require 3 consecutive passes so one lucky response during a restart does not count
+ok=0
+for _ in $(seq 1 20); do
+  if curl -fsS -o /dev/null "$HEALTH_URL"; then ok=$((ok + 1)); else ok=0; fi
+  if [ "$ok" -ge 3 ]; then
     echo "deploy ok: $(git rev-parse --short HEAD)"
     exit 0
   fi
-  sleep 5
+  sleep 3
 done
 rollback "health check"
