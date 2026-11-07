@@ -55,7 +55,8 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Mount the directory, not the file: git pull replaces the file and a file mount keeps the old one
+      - ./nginx:/etc/nginx/conf.d:ro
     mem_limit: 64m
     restart: unless-stopped
     depends_on:

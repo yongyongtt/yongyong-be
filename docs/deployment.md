@@ -43,6 +43,7 @@ cd ~/app
 docker image inspect yong-app:latest >/dev/null 2>&1 && docker tag yong-app:latest yong-app:prev   # 롤백용
 git pull
 docker compose up -d --build
+docker compose exec nginx nginx -s reload  # nginx.conf만 바뀌면 컨테이너가 다시 만들어지지 않으므로
 docker compose ps                        # app, db: healthy / nginx: running
 curl -fsS http://localhost/health
 ```
