@@ -1,0 +1,69 @@
+name: yongyong
+
+x-labels: &labels
+  com.yongyong.project: yongyong
+
+services:
+  app:
+    build: .
+    # Fixed tag so the previous image can be kept as yong-app:prev for rollback
+    image: yong-app:latest
+    # Pass only what each service needs (the app never sees the root password)
+    environment:
+      DB_URL: jdbc:mariadb://db:3306/yongin
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000}
+    expose:
+      - "8080"
+    mem_limit: 768m
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    labels: *labels
+
+  db:
+    image: mariadb:12.2.2
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MARIADB_DATABASE: yongin
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+    command: ["--character-set-server=utf8mb4"]
+    volumes:
+      - db-data:/var/lib/mysql
+      # Runs only on first start (empty volume): creates the SELECT-only app account
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    mem_limit: 512m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    labels: *labels
+
+  nginx:
+    image: nginx:1.28-alpine
+    ports:
+      - "80:80"
+    volumes:
+      # Mount the directory, not the file: git pull replaces the file and a file mount keeps the old one
+      - ./nginx:/etc/nginx/conf.d:ro
+    mem_limit: 64m
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    labels: *labels
+
+volumes:
+  db-data:
+    labels: *labels

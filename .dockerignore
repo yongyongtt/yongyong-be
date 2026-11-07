@@ -1,0 +1,12 @@
+.git
+.github
+.gradle
+.idea
+.claude
+build
+.env
+*.pem
+*.sql
+*.md
+docs
+scripts

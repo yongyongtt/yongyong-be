@@ -1,6 +1,6 @@
 # CLAUDE.md — 용인 교통 사각지대 진단 백엔드
 
-RULES_VERSION: R8  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 변경 이력"에 한 줄 남긴다)
+RULES_VERSION: R9  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 변경 이력"에 한 줄 남긴다)
 
 이 파일은 이 저장소에서 일하는 Claude가 매번 따라야 하는 규칙이다.
 규칙과 다른 방법이 더 낫다고 판단되면, 바로 바꾸지 말고 사용자에게 먼저 제안한다.
@@ -35,7 +35,7 @@ RULES_VERSION: R8  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 �
 
 - Java 21, Spring Boot 4.1.2, Gradle 9.8.2 (실제 버전은 build.gradle 기준)
 - DB: MariaDB `yongin` (Python이 적재, Spring은 **읽기 전용**). INSERT/UPDATE/DELETE 쿼리를 쓰지 않는다
-- 기본 접속 DB는 `yongin_app`이다. 앱 계정은 `yongin`에 `SELECT`만, `yongin_app`에 `SELECT, INSERT, UPDATE, DELETE`를 가진다. 테이블 생성은 root로 한다
+- 앱은 `yongin`에 바로 접속한다. 앱 계정은 `yongin`에 `SELECT`만 가진다 (`yongin_app`은 쓰지 않음, decisions D15). 계정·DB 생성은 root로 한다
 - `.env`의 값은 사용자가 직접 적고, Claude는 이 파일을 읽지 않는다
 - DB 접근: **Spring Data JPA, 읽기 전용 엔티티** (decisions D1). 엔티티는 `@Table(catalog = "yongin", name = "...")`로 DB를 지정한다. MariaDB Dialect는 `catalog`만 한정자로 지원하므로 `schema`를 쓰지 않는다
 - `spring.jpa.hibernate.ddl-auto=none` 고정. `yongin` 스키마를 Hibernate가 만들거나 검사하지 않게 한다 (`update`, `create`, `validate` 금지)
@@ -244,3 +244,4 @@ GitHub Actions `ci.yml`이 PR마다 아래를 돌리고, 하나라도 실패하�
 | 2026-11-06 | R6 | API 5 지표를 비율까지 모두 정수로 반올림 | 사용자 결정 (API 1~4 표시와 일치), decisions D14 |
 | 2026-11-06 | R7 | 비율 기본 표기를 정수 반올림으로 변경, API 6 값도 정수 | 사용자 결정, decisions D14 |
 | 2026-11-06 | R8 | API 7 `options` `score` 정수 반올림, 없는 연도와 지역도 `RECOMMENDATION_NOT_FOUND` | 사용자 결정, decisions D12 |
+| 2026-11-07 | R9 | 앱은 `yongin`에 SELECT 전용 계정 하나로 접속, `yongin_app` 제거 | 사용자 결정 (배포 준비 중 `yongin_app`을 쓰는 엔티티·테이블이 없음을 확인), decisions D15 |

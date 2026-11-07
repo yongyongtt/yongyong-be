@@ -1,0 +1,40 @@
+name: deploy
+
+# Deploy only after ci passes on a push to main, so tests are not run twice
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+
+# Never run two deploys on the server at the same time
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Plain ssh instead of a third-party action, so the key is not handed to outside code
+      - name: ssh-setup
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: deploy
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: ssh -i ~/.ssh/deploy_key "$SERVER_USER@$SERVER_HOST" 'cd ~/app && ./scripts/deploy.sh'
+
+      - name: ssh-cleanup
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
