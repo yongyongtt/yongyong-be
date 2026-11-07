@@ -36,24 +36,25 @@ rm yongin.sql                            # 덤프는 서버에 남기지 않는�
 docker compose exec db sh -c 'exec mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" -e "SHOW TABLES FROM yongin; SHOW GRANTS FOR \`$DB_USERNAME\`@\`%\`;"'
 ```
 
-## 3. 수동 배포
+## 3. 배포
+
+main에 push → `ci` 통과 → `deploy` 워크플로가 SSH로 접속해 `scripts/deploy.sh` 실행.
+수동으로 배포할 때도 같은 스크립트를 쓴다.
 
 ```bash
-cd ~/app
-docker image inspect yong-app:latest >/dev/null 2>&1 && docker tag yong-app:latest yong-app:prev   # 롤백용
-git pull
-docker compose up -d --build
-docker compose exec nginx nginx -s reload  # nginx.conf만 바뀌면 컨테이너가 다시 만들어지지 않으므로
-docker compose ps                        # app, db: healthy / nginx: running
-curl -fsS http://localhost/health
+cd ~/app && ./scripts/deploy.sh
 ```
 
-롤백 (헬스체크 실패 시):
+스크립트가 하는 일: `yong-app:latest` → `yong-app:prev` 태그 → main으로 이동·fast-forward → `up -d --build` → nginx reload → `/health` 확인(최대 60초) → 실패하면 prev로 롤백하고 실패로 끝남.
+
+롤백만 따로 할 때:
 
 ```bash
 docker tag yong-app:prev yong-app:latest
 docker compose up -d --no-build app
 ```
+
+GitHub Secrets: `SERVER_HOST`, `SERVER_USER`, `SERVER_SSH_KEY`(배포 전용 키).
 
 ## 4. 검증 체크리스트
 
