@@ -41,3 +41,5 @@ out/
 .env
 CLAUDE.local.md
 WORKLOG.md
+/docs/deploy.md
+*.pem
