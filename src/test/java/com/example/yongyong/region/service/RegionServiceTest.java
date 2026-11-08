@@ -3,18 +3,22 @@ package com.example.yongyong.region.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 
 import com.example.yongyong.common.converter.OptionJson;
 import com.example.yongyong.common.exception.BusinessException;
 import com.example.yongyong.common.exception.ErrorCode;
 import com.example.yongyong.common.query.PeriodQuery;
+import com.example.yongyong.common.query.PeriodService;
+import com.example.yongyong.common.response.PeriodResponse;
+import com.example.yongyong.dashboard.service.DashboardService;
+import com.example.yongyong.dashboard.service.DashboardService.RegionScore;
+import com.example.yongyong.dashboard.service.DashboardService.Scores;
 import com.example.yongyong.region.dto.RegionDetailResponse;
 import com.example.yongyong.region.dto.RegionPreviewResponse;
 import com.example.yongyong.yongin.entity.MlExplanation;
-import com.example.yongyong.yongin.entity.MlPriority;
 import com.example.yongyong.yongin.entity.MlRegion;
 import com.example.yongyong.yongin.repository.MlExplanationRepository;
-import com.example.yongyong.yongin.repository.MlPriorityRepository;
 import com.example.yongyong.yongin.repository.MlRegionRepository;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,79 +35,64 @@ import org.springframework.test.util.ReflectionTestUtils;
 class RegionServiceTest {
 
   private static final String CODE = "4146125000";
+  private static final String TYPE = "정류장 접근 취약형";
+  private static final PeriodQuery ANNUAL = new PeriodQuery(2025, null);
+  private static final PeriodQuery FEBRUARY = new PeriodQuery(2025, 2);
 
-  @Mock private MlPriorityRepository mlPriorityRepository;
+  @Mock private DashboardService dashboardService;
+  @Mock private PeriodService periodService;
   @Mock private MlRegionRepository mlRegionRepository;
   @Mock private MlExplanationRepository mlExplanationRepository;
   @InjectMocks private RegionService regionService;
 
   @Test
-  @DisplayName("연간 점수와 순위, 유형, 추천 수단, 요약을 dong으로 조회해 내린다")
-  void annual() {
-    givenPriority(0, 60.4, 7);
-    givenRegion();
-    givenExplanation(
-        false,
-        List.of(
-            option("DRT", "똑버스", "추천"),
-            option("BUS", "노선버스", "제외"),
-            option("HAPPY_TAXI", "행복택시", "제외")));
+  @DisplayName("연간 미리보기: 점수·순위는 월 평균, 유형과 추천은 각 테이블의 최근 달 값이다")
+  void previewAnnual() {
+    givenScores(ANNUAL, List.of(1, 2, 3), score(CODE, "포곡읍", 59, 7));
+    given(mlRegionRepository.findMonths(2025, "dong")).willReturn(List.of(3, 7, 5));
+    given(mlExplanationRepository.findMonths(2025, "dong")).willReturn(List.of(6, 7));
+    givenRegion(7, CODE, TYPE);
+    givenExplanation(7, false, List.of(option("DRT", "똑버스", "추천"), option("BUS", "노선버스", "제외")));
 
-    RegionPreviewResponse response = regionService.getPreview(CODE, new PeriodQuery(2025, null));
+    RegionPreviewResponse response = regionService.getPreview(CODE, ANNUAL);
 
-    assertThat(response)
-        .isEqualTo(
-            new RegionPreviewResponse(
-                CODE,
-                "포곡읍",
-                "처인구",
-                60,
-                7,
-                new RegionPreviewResponse.Type("정류장 접근 취약형", "유형 설명"),
-                false,
-                List.of(new RegionPreviewResponse.Recommended("DRT", "똑버스")),
-                "한 줄 요약"));
+    assertThat(response.regionName()).isEqualTo("포곡읍");
+    assertThat(response.score()).isEqualTo(59);
+    assertThat(response.rank()).isEqualTo(7);
+    assertThat(response.type()).isEqualTo(new RegionPreviewResponse.Type(TYPE, "7월 설명"));
+    assertThat(response.isKeep()).isFalse();
+    assertThat(response.recommended())
+        .containsExactly(new RegionPreviewResponse.Recommended("DRT", "똑버스"));
+    assertThat(response.summary()).isEqualTo("7월 요약");
+    assertThat(response.period())
+        .isEqualTo(new PeriodResponse(2025, List.of(1, 2, 3), PeriodResponse.Type.YEAR_ALL));
+    assertThat(response.typePeriod())
+        .isEqualTo(new PeriodResponse(2025, List.of(7), PeriodResponse.Type.YEAR_LATEST));
   }
 
   @Test
-  @DisplayName("월을 고르면 점수와 순위만 그 달 값으로 바뀐다")
-  void monthly() {
-    givenPriority(2, 60.4, 6);
-    givenRegion();
-    givenExplanation(false, List.of(option("DRT", "똑버스", "추천")));
+  @DisplayName("월을 고르면 점수, 유형, 추천이 모두 그 달 행이다")
+  void previewMonthly() {
+    givenScores(FEBRUARY, List.of(2), score(CODE, "포곡읍", 60, 6));
+    givenRegion(2, CODE, TYPE);
+    givenExplanation(2, false, List.of(option("DRT", "똑버스", "추천")));
 
-    RegionPreviewResponse response = regionService.getPreview(CODE, new PeriodQuery(2025, 2));
+    RegionPreviewResponse response = regionService.getPreview(CODE, FEBRUARY);
 
-    assertThat(response.rank()).isEqualTo(6);
-    assertThat(response.type().name()).isEqualTo("정류장 접근 취약형");
-    assertThat(response.summary()).isEqualTo("한 줄 요약");
-  }
-
-  @Test
-  @DisplayName("점수는 소수점 없이 정수로 반올림한다")
-  void scoreRounded() {
-    givenPriority(0, 64.7, 3);
-    givenRegion();
-    givenExplanation(false, List.of(option("DRT", "똑버스", "추천")));
-
-    RegionPreviewResponse response = regionService.getPreview(CODE, new PeriodQuery(2025, null));
-
-    assertThat(response.score()).isEqualTo(65);
+    assertThat(response.type().desc()).isEqualTo("2월 설명");
+    assertThat(response.summary()).isEqualTo("2월 요약");
+    PeriodResponse february = new PeriodResponse(2025, List.of(2), PeriodResponse.Type.MONTH);
+    assertThat(response.period()).isEqualTo(february);
+    assertThat(response.typePeriod()).isEqualTo(february);
   }
 
   @Test
   @DisplayName("현행 유지 지역이면 isKeep이 true이고 추천은 KEEP 하나다")
-  void keep() {
-    givenPriority(0, 20.0, 30);
-    givenRegion();
-    givenExplanation(
-        true,
-        List.of(
-            option("KEEP", "현행 유지", "추천"),
-            option("DRT", "똑버스", "제외"),
-            option("BUS", "노선버스", "제외")));
+  void previewKeep() {
+    givenScores(FEBRUARY, List.of(2), score(CODE, "포곡읍", 60, 6));
+    givenExplanation(2, true, List.of(option("KEEP", "현행 유지", "추천"), option("BUS", "노선버스", "제외")));
 
-    RegionPreviewResponse response = regionService.getPreview(CODE, new PeriodQuery(2025, null));
+    RegionPreviewResponse response = regionService.getPreview(CODE, FEBRUARY);
 
     assertThat(response.isKeep()).isTrue();
     assertThat(response.recommended())
@@ -112,309 +101,152 @@ class RegionServiceTest {
 
   @Test
   @DisplayName("ml_region과 ml_explanation 행이 없으면 404가 아니라 null로 내린다")
-  void missingTypeAndExplanation() {
-    givenPriority(0, 60.4, 7);
-    given(mlRegionRepository.findByYearAndUnitAndRegionCd(2025, "dong", CODE))
-        .willReturn(Optional.empty());
-    given(mlExplanationRepository.findByYearAndUnitAndRegionCd(2025, "dong", CODE))
-        .willReturn(Optional.empty());
+  void previewWithoutTypeAndExplanation() {
+    givenScores(ANNUAL, List.of(1), score(CODE, "포곡읍", 59, 7));
+    given(mlRegionRepository.findMonths(2025, "dong")).willReturn(List.of());
+    given(mlExplanationRepository.findMonths(2025, "dong")).willReturn(List.of());
 
-    RegionPreviewResponse response = regionService.getPreview(CODE, new PeriodQuery(2025, null));
+    RegionPreviewResponse response = regionService.getPreview(CODE, ANNUAL);
 
-    assertThat(response.score()).isEqualTo(60);
     assertThat(response.type()).isNull();
     assertThat(response.isKeep()).isFalse();
     assertThat(response.recommended()).isNull();
     assertThat(response.summary()).isNull();
+    assertThat(response.typePeriod())
+        .isEqualTo(new PeriodResponse(2025, List.of(), PeriodResponse.Type.YEAR_LATEST));
   }
 
   @Test
-  @DisplayName("연도 데이터는 있는데 지역이 없으면 REGION_NOT_FOUND를 던진다")
+  @DisplayName("점수 목록에 지역이 없으면 REGION_NOT_FOUND를 던진다")
   void regionNotFound() {
-    givenNoPriority(2025, 0);
-    givenLoadedYear();
+    givenScores(ANNUAL, List.of(1), score("4146134000", "원삼면", 66, 1));
 
-    assertError(new PeriodQuery(2025, null), ErrorCode.REGION_NOT_FOUND);
+    assertError(() -> regionService.getPreview(CODE, ANNUAL), ErrorCode.REGION_NOT_FOUND);
+    assertError(() -> regionService.getDetail(CODE, ANNUAL), ErrorCode.REGION_NOT_FOUND);
   }
 
   @Test
-  @DisplayName("지역은 있는데 그 월이 적재되지 않았으면 PERIOD_NOT_FOUND를 던진다")
-  void monthNotLoaded() {
-    givenNoPriority(2025, 5);
-    givenLoadedYear();
-    givenPriority(0, 60.4, 7);
+  @DisplayName("공통 달에 없는 월이면 checkMonth의 예외를 그대로 던진다")
+  void monthNotReady() {
+    PeriodQuery august = new PeriodQuery(2025, 8);
+    willThrow(new BusinessException(ErrorCode.SUITABILITY_NOT_READY))
+        .given(periodService)
+        .checkMonth(august);
 
-    assertError(new PeriodQuery(2025, 5), ErrorCode.PERIOD_NOT_FOUND);
+    assertError(() -> regionService.getPreview(CODE, august), ErrorCode.SUITABILITY_NOT_READY);
+    assertError(() -> regionService.getDetail(CODE, august), ErrorCode.SUITABILITY_NOT_READY);
   }
 
   @Test
-  @DisplayName("월을 골랐는데 연간에도 없는 지역이면 REGION_NOT_FOUND를 던진다")
-  void monthAndRegionNotFound() {
-    givenNoPriority(2025, 5);
-    givenLoadedYear();
-    givenNoPriority(2025, 0);
-
-    assertError(new PeriodQuery(2025, 5), ErrorCode.REGION_NOT_FOUND);
-  }
-
-  @Test
-  @DisplayName("연도 데이터가 아예 없으면 PERIOD_NOT_FOUND를 던진다")
-  void yearNotLoaded() {
-    givenNoPriority(2024, 0);
-    givenLoadedYear();
-
-    assertError(new PeriodQuery(2024, null), ErrorCode.PERIOD_NOT_FOUND);
-  }
-
-  @Test
-  @DisplayName("연도 데이터가 없으면 월을 골라도 PERIOD_NOT_FOUND를 던진다")
-  void yearNotLoadedWithMonth() {
-    givenNoPriority(2024, 2);
-    givenLoadedYear();
-    givenNoPriority(2024, 0);
-
-    assertError(new PeriodQuery(2024, 2), ErrorCode.PERIOD_NOT_FOUND);
-  }
-
-  @Test
-  @DisplayName("상세는 헤더, 기간, 신뢰도, 유형과 칩을 내리고 점수는 정수로 반올림한다")
+  @DisplayName("연간 상세: 헤더는 월 평균(YEAR_ALL), 유형·신뢰도는 최근 달(YEAR_LATEST)이다")
   void detailAnnual() {
-    givenPriority(0, 64.7, 7);
-    givenPeriods(period(2024, 0), period(2025, 0), period(2025, 2));
-    givenDetailRegion(false, null);
-    givenSameType(CODE);
-    givenAnnualRows(priorityRow(7, CODE, "포곡읍"));
+    givenScores(ANNUAL, List.of(1, 2, 3), score(CODE, "포곡읍", 59, 7));
+    given(mlRegionRepository.findMonths(2025, "dong")).willReturn(List.of(1, 2));
+    givenRegion(2, CODE, TYPE);
+    givenSameType(2);
 
-    RegionDetailResponse response = regionService.getDetail(CODE, new PeriodQuery(2025, null));
+    RegionDetailResponse response = regionService.getDetail(CODE, ANNUAL);
 
     assertThat(response.header())
-        .isEqualTo(new RegionDetailResponse.Header(CODE, "포곡읍", "처인구", 65, 7));
-    assertThat(response.period().year()).isEqualTo(2025);
-    assertThat(response.period().month()).isNull();
-    assertThat(response.period().availableMonths()).containsExactly(null, 2);
+        .isEqualTo(new RegionDetailResponse.Header(CODE, "포곡읍", "처인구", 59, 7));
+    assertThat(response.period())
+        .isEqualTo(new PeriodResponse(2025, List.of(1, 2, 3), PeriodResponse.Type.YEAR_ALL));
+    assertThat(response.typePeriod())
+        .isEqualTo(new PeriodResponse(2025, List.of(2), PeriodResponse.Type.YEAR_LATEST));
     assertThat(response.reliability()).isEqualTo(new RegionDetailResponse.Reliability(false, null));
-    assertThat(response.type().name()).isEqualTo("정류장 접근 취약형");
-    assertThat(response.type().desc()).isEqualTo("유형 설명");
-    assertThat(response.type().chips()).containsExactly("칩 하나", "칩 둘");
+    assertThat(response.type().name()).isEqualTo(TYPE);
+    assertThat(response.type().desc()).isEqualTo("2월 설명");
+    assertThat(response.type().chips()).containsExactly("2월 칩");
   }
 
   @Test
-  @DisplayName("상세에서 월을 고르면 헤더와 기간만 그 달 값이고 유형은 연간 값이다")
-  void detailMonthly() {
-    givenPriority(2, 60.4, 6);
-    givenPeriods(period(2025, 0), period(2025, 2));
-    givenDetailRegion(false, null);
-    givenSameType(CODE, "4146125300");
-    givenAnnualRows(priorityRow(7, CODE, "포곡읍"), priorityRow(3, "4146125300", "모현읍"));
+  @DisplayName("같은 유형 지역은 같은 달 기준, 자기 자신을 빼고 중복 없이 재계산 순위·코드 순으로 내린다")
+  void sameTypeRegions() {
+    givenScores(
+        FEBRUARY,
+        List.of(2),
+        score("C", "공동3위 코드 뒤", 50, 3),
+        score(CODE, "포곡읍", 60, 1),
+        score("A", "2위", 55, 2),
+        score("B", "공동3위 코드 앞", 50, 3),
+        score("D", "다른 유형", 40, 5));
+    givenRegion(2, CODE, TYPE);
+    givenSameType(2, CODE, "C", "A", "B", "A");
 
-    RegionDetailResponse response = regionService.getDetail(CODE, new PeriodQuery(2025, 2));
+    RegionDetailResponse response = regionService.getDetail(CODE, FEBRUARY);
 
-    assertThat(response.header().rank()).isEqualTo(6);
-    assertThat(response.period().month()).isEqualTo(2);
+    assertThat(response.typePeriod())
+        .isEqualTo(new PeriodResponse(2025, List.of(2), PeriodResponse.Type.MONTH));
     assertThat(response.type().sameTypeRegions())
-        .containsExactly(new RegionDetailResponse.SameTypeRegion("4146125300", "모현읍"));
-  }
-
-  @Test
-  @DisplayName("같은 유형 지역은 자기 자신을 빼고 rank_total, region_cd 순으로 내린다")
-  void detailSameTypeOrder() {
-    givenPriority(0, 60.4, 7);
-    givenPeriods(period(2025, 0));
-    givenDetailRegion(false, null);
-    givenSameType(CODE, "C", "B", "A");
-    givenAnnualRows(
-        priorityRow(7, CODE, "포곡읍"),
-        priorityRow(9, "A", "9위"),
-        priorityRow(2, "C", "공동 2위, 코드가 뒤"),
-        priorityRow(2, "B", "공동 2위, 코드가 앞"),
-        priorityRow(1, "Z", "다른 유형"));
-
-    RegionDetailResponse response = regionService.getDetail(CODE, new PeriodQuery(2025, null));
-
-    assertThat(response.type().sameTypeRegions())
-        .extracting(RegionDetailResponse.SameTypeRegion::regionCode)
-        .containsExactly("B", "C", "A");
-  }
-
-  @Test
-  @DisplayName("신뢰도가 낮으면 low가 true이고 안내 문구를 내린다")
-  void detailLowReliability() {
-    givenPriority(0, 60.4, 7);
-    givenPeriods(period(2025, 0));
-    givenDetailRegion(true, "표본이 적어요");
-    givenSameType(CODE);
-    givenAnnualRows(priorityRow(7, CODE, "포곡읍"));
-
-    RegionDetailResponse response = regionService.getDetail(CODE, new PeriodQuery(2025, null));
-
-    assertThat(response.reliability())
-        .isEqualTo(new RegionDetailResponse.Reliability(true, "표본이 적어요"));
+        .containsExactly(
+            new RegionDetailResponse.SameTypeRegion("A", "2위"),
+            new RegionDetailResponse.SameTypeRegion("B", "공동3위 코드 앞"),
+            new RegionDetailResponse.SameTypeRegion("C", "공동3위 코드 뒤"));
   }
 
   @Test
   @DisplayName("ml_region 행이 없으면 404가 아니라 type은 null, 신뢰도는 false로 내린다")
-  void detailMissingRegion() {
-    givenPriority(0, 60.4, 7);
-    givenPeriods(period(2025, 0));
-    given(mlRegionRepository.findByYearAndUnitAndRegionCd(2025, "dong", CODE))
-        .willReturn(Optional.empty());
+  void detailWithoutRegion() {
+    givenScores(FEBRUARY, List.of(2), score(CODE, "포곡읍", 60, 6));
 
-    RegionDetailResponse response = regionService.getDetail(CODE, new PeriodQuery(2025, null));
+    RegionDetailResponse response = regionService.getDetail(CODE, FEBRUARY);
 
     assertThat(response.type()).isNull();
     assertThat(response.reliability()).isEqualTo(new RegionDetailResponse.Reliability(false, null));
   }
 
-  @Test
-  @DisplayName("상세도 연도는 있는데 지역이 없으면 REGION_NOT_FOUND를 던진다")
-  void detailRegionNotFound() {
-    givenNoPriority(2025, 0);
-    givenLoadedYear();
-
-    assertDetailError(new PeriodQuery(2025, null), ErrorCode.REGION_NOT_FOUND);
+  private void givenScores(PeriodQuery query, List<Integer> months, RegionScore... regions) {
+    given(dashboardService.scores(query)).willReturn(new Scores(months, List.of(regions)));
   }
 
-  @Test
-  @DisplayName("상세도 지역은 있는데 월이 적재되지 않았으면 PERIOD_NOT_FOUND를 던진다")
-  void detailMonthNotLoaded() {
-    givenNoPriority(2025, 5);
-    givenLoadedYear();
-    givenPriority(0, 60.4, 7);
-
-    assertDetailError(new PeriodQuery(2025, 5), ErrorCode.PERIOD_NOT_FOUND);
+  private RegionScore score(String code, String name, int score, int rank) {
+    return new RegionScore(code, name, "처인구", score, score, rank);
   }
 
-  @Test
-  @DisplayName("상세도 연도 데이터가 없으면 PERIOD_NOT_FOUND를 던진다")
-  void detailYearNotLoaded() {
-    givenNoPriority(2024, 0);
-    givenLoadedYear();
-
-    assertDetailError(new PeriodQuery(2024, null), ErrorCode.PERIOD_NOT_FOUND);
+  private void givenRegion(int month, String code, String type) {
+    given(mlRegionRepository.findByYearAndMonthAndUnitAndRegionCd(2025, month, "dong", code))
+        .willReturn(Optional.of(region(month, code, type)));
   }
 
-  private void assertDetailError(PeriodQuery query, ErrorCode errorCode) {
-    assertThatThrownBy(() -> regionService.getDetail(CODE, query))
-        .isInstanceOf(BusinessException.class)
-        .extracting("errorCode")
-        .isEqualTo(errorCode);
-  }
-
-  private void givenPeriods(MlPriorityRepository.PeriodKey... periods) {
-    given(mlPriorityRepository.findPeriods("dong")).willReturn(List.of(periods));
-  }
-
-  private MlPriorityRepository.PeriodKey period(int year, int monthKey) {
-    return new MlPriorityRepository.PeriodKey() {
-      @Override
-      public Integer getYear() {
-        return year;
-      }
-
-      @Override
-      public Integer getMonthKey() {
-        return monthKey;
-      }
-    };
-  }
-
-  private void givenDetailRegion(boolean low, String note) {
-    MlRegion region = new MlRegion();
-    ReflectionTestUtils.setField(region, "typeNm", "정류장 접근 취약형");
-    ReflectionTestUtils.setField(region, "typeDesc", "유형 설명");
-    ReflectionTestUtils.setField(region, "typeChips", List.of("칩 하나", "칩 둘"));
-    ReflectionTestUtils.setField(region, "lowReliability", low);
-    ReflectionTestUtils.setField(region, "reliabilityNote", note);
-    given(mlRegionRepository.findByYearAndUnitAndRegionCd(2025, "dong", CODE))
-        .willReturn(Optional.of(region));
-  }
-
-  private void givenSameType(String... regionCodes) {
+  private void givenSameType(int month, String... codes) {
     List<MlRegion> regions = new ArrayList<>();
-    for (String regionCode : regionCodes) {
-      MlRegion region = new MlRegion();
-      ReflectionTestUtils.setField(region, "regionCd", regionCode);
-      regions.add(region);
+    for (String code : codes) {
+      regions.add(region(month, code, TYPE));
     }
-    given(mlRegionRepository.findByYearAndUnitAndTypeNm(2025, "dong", "정류장 접근 취약형"))
+    given(mlRegionRepository.findByYearAndMonthAndUnitAndTypeNm(2025, month, "dong", TYPE))
         .willReturn(regions);
   }
 
-  private void givenAnnualRows(MlPriority... rows) {
-    given(mlPriorityRepository.findByYearAndMonthKeyAndUnit(2025, 0, "dong"))
-        .willReturn(List.of(rows));
+  private MlRegion region(int month, String code, String type) {
+    MlRegion region = new MlRegion();
+    ReflectionTestUtils.setField(region, "month", month);
+    ReflectionTestUtils.setField(region, "regionCd", code);
+    ReflectionTestUtils.setField(region, "typeNm", type);
+    ReflectionTestUtils.setField(region, "typeDesc", month + "월 설명");
+    ReflectionTestUtils.setField(region, "typeChips", List.of(month + "월 칩"));
+    ReflectionTestUtils.setField(region, "lowReliability", false);
+    return region;
   }
 
-  private MlPriority priorityRow(int rank, String code, String name) {
-    MlPriority row = new MlPriority();
-    ReflectionTestUtils.setField(row, "rankTotal", rank);
-    ReflectionTestUtils.setField(row, "regionCd", code);
-    ReflectionTestUtils.setField(row, "regionNm", name);
-    return row;
+  private void givenExplanation(int month, boolean keep, List<OptionJson> options) {
+    MlExplanation explanation = new MlExplanation();
+    ReflectionTestUtils.setField(explanation, "month", month);
+    ReflectionTestUtils.setField(explanation, "isKeep", keep);
+    ReflectionTestUtils.setField(explanation, "options", options);
+    ReflectionTestUtils.setField(explanation, "summary", month + "월 요약");
+    given(mlExplanationRepository.findByYearAndMonthAndUnitAndRegionCd(2025, month, "dong", CODE))
+        .willReturn(Optional.of(explanation));
   }
 
   private OptionJson option(String mode, String name, String status) {
     return new OptionJson(mode, name, null, null, status, null, null, null, null, null, null);
   }
 
-  private void assertError(PeriodQuery query, ErrorCode errorCode) {
-    assertThatThrownBy(() -> regionService.getPreview(CODE, query))
+  private void assertError(
+      org.assertj.core.api.ThrowableAssert.ThrowingCallable call, ErrorCode errorCode) {
+    assertThatThrownBy(call)
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(errorCode);
-  }
-
-  private void givenNoPriority(int year, int monthKey) {
-    given(
-            mlPriorityRepository.findByYearAndMonthKeyAndUnitAndRegionCd(
-                year, monthKey, "dong", CODE))
-        .willReturn(Optional.empty());
-  }
-
-  private void givenLoadedYear() {
-    given(mlPriorityRepository.findPeriods("dong"))
-        .willReturn(
-            List.of(
-                new MlPriorityRepository.PeriodKey() {
-                  @Override
-                  public Integer getYear() {
-                    return 2025;
-                  }
-
-                  @Override
-                  public Integer getMonthKey() {
-                    return 0;
-                  }
-                }));
-  }
-
-  private void givenPriority(int monthKey, double score, int rank) {
-    MlPriority priority = new MlPriority();
-    ReflectionTestUtils.setField(priority, "regionCd", CODE);
-    ReflectionTestUtils.setField(priority, "regionNm", "포곡읍");
-    ReflectionTestUtils.setField(priority, "gu", "처인구");
-    ReflectionTestUtils.setField(priority, "scoreTotal", score);
-    ReflectionTestUtils.setField(priority, "rankTotal", rank);
-    given(
-            mlPriorityRepository.findByYearAndMonthKeyAndUnitAndRegionCd(
-                2025, monthKey, "dong", CODE))
-        .willReturn(Optional.of(priority));
-  }
-
-  private void givenRegion() {
-    MlRegion region = new MlRegion();
-    ReflectionTestUtils.setField(region, "typeNm", "정류장 접근 취약형");
-    ReflectionTestUtils.setField(region, "typeDesc", "유형 설명");
-    given(mlRegionRepository.findByYearAndUnitAndRegionCd(2025, "dong", CODE))
-        .willReturn(Optional.of(region));
-  }
-
-  private void givenExplanation(boolean keep, List<OptionJson> options) {
-    MlExplanation explanation = new MlExplanation();
-    ReflectionTestUtils.setField(explanation, "isKeep", keep);
-    ReflectionTestUtils.setField(explanation, "options", options);
-    ReflectionTestUtils.setField(explanation, "summary", "한 줄 요약");
-    given(mlExplanationRepository.findByYearAndUnitAndRegionCd(2025, "dong", CODE))
-        .willReturn(Optional.of(explanation));
   }
 }

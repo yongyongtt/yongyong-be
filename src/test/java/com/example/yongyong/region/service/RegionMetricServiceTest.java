@@ -3,10 +3,13 @@ package com.example.yongyong.region.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 
 import com.example.yongyong.common.exception.BusinessException;
 import com.example.yongyong.common.exception.ErrorCode;
 import com.example.yongyong.common.query.PeriodQuery;
+import com.example.yongyong.common.query.PeriodService;
+import com.example.yongyong.common.response.PeriodResponse;
 import com.example.yongyong.region.dto.RegionComparisonResponse;
 import com.example.yongyong.region.dto.RegionComparisonResponse.Metric;
 import com.example.yongyong.region.dto.RegionTrendResponse;
@@ -38,18 +41,23 @@ class RegionMetricServiceTest {
   @Mock private FeatRegionMonthRepository featRegionMonthRepository;
   @Mock private FeatCityRepository featCityRepository;
   @Mock private FeatCityMonthRepository featCityMonthRepository;
+  @Mock private PeriodService periodService;
   @InjectMocks private RegionMetricService regionMetricService;
 
   @Test
-  @DisplayName("연간은 feat_region과 feat_city_month 집계로 지표 4개를 순서대로 내린다")
+  @DisplayName("연간은 feat_region과 feat_city_month 집계로 지표 4개를 순서대로 내리고 period는 YEAR_ALL이다")
   void annual() {
     givenRegion();
     givenCity();
     givenCityMonths();
+    given(featRegionMonthRepository.findByYearAndDongCd(2025, CODE))
+        .willReturn(List.of(regionTrendRow(2, 0.3, 1.0, 1.0), regionTrendRow(1, 0.3, 1.0, 1.0)));
 
     RegionComparisonResponse response =
         regionMetricService.getComparison(CODE, new PeriodQuery(2025, null));
 
+    assertThat(response.period())
+        .isEqualTo(new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL));
     assertThat(response.metrics())
         .containsExactly(
             new Metric("TAXI_MATCH_RATE", "택시 호출 성사율", "%", 53, 60),
@@ -69,6 +77,8 @@ class RegionMetricServiceTest {
     RegionComparisonResponse response =
         regionMetricService.getComparison(CODE, new PeriodQuery(2025, 2));
 
+    assertThat(response.period())
+        .isEqualTo(new PeriodResponse(2025, List.of(2), PeriodResponse.Type.MONTH));
     assertThat(response.metrics())
         .containsExactly(
             new Metric("TAXI_MATCH_RATE", "택시 호출 성사율", "%", 63, 64),
@@ -131,6 +141,17 @@ class RegionMetricServiceTest {
   }
 
   @Test
+  @DisplayName("공통 달에 없는 월이면 feat_region_month에 있어도 checkMonth의 예외를 그대로 던진다")
+  void monthNotReady() {
+    PeriodQuery august = new PeriodQuery(2025, 8);
+    willThrow(new BusinessException(ErrorCode.SUITABILITY_NOT_READY))
+        .given(periodService)
+        .checkMonth(august);
+
+    assertError(august, ErrorCode.SUITABILITY_NOT_READY);
+  }
+
+  @Test
   @DisplayName("연도 데이터가 없으면 PERIOD_NOT_FOUND를 던진다")
   void yearNotLoaded() {
     given(featRegionRepository.findByYearAndDongCd(2024, CODE)).willReturn(Optional.empty());
@@ -159,7 +180,7 @@ class RegionMetricServiceTest {
   }
 
   @Test
-  @DisplayName("추이는 월 순서대로 비율과 건수를 정수로 반올림해 내린다")
+  @DisplayName("추이는 월 순서대로 비율과 건수를 정수로 반올림해 내리고 period는 YEAR_ALL과 그 달들이다")
   void trend() {
     given(featRegionMonthRepository.findByYearAndDongCd(2025, CODE))
         .willReturn(
@@ -171,6 +192,8 @@ class RegionMetricServiceTest {
 
     RegionTrendResponse response = regionMetricService.getUnmatchedTrend(CODE, 2025);
 
+    assertThat(response.period())
+        .isEqualTo(new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL));
     assertThat(response.points())
         .containsExactly(
             new Point(2025, 1, 45, 2779, 1538, 45), new Point(2025, 2, 37, 2571, 1631, 36));

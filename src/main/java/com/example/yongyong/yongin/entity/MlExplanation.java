@@ -10,17 +10,20 @@ import jakarta.persistence.Table;
 import java.util.List;
 import lombok.Getter;
 import org.hibernate.annotations.Immutable;
+import org.hibernate.annotations.SQLRestriction;
 
 @Entity
 @Immutable
 @Table(catalog = "yongin", name = "ml_explanation")
+@SQLRestriction("month is not null")
 @IdClass(MlExplanation.Id.class)
 @Getter
 public class MlExplanation {
 
-  public record Id(Integer year, String unit, String regionCd) {}
+  public record Id(Integer year, Integer month, String unit, String regionCd) {}
 
   @jakarta.persistence.Id private Integer year;
+  @jakarta.persistence.Id private Integer month;
   @jakarta.persistence.Id private String unit;
   @jakarta.persistence.Id private String regionCd;
   private Boolean isKeep;

@@ -5,6 +5,9 @@ import static com.example.yongyong.common.query.PeriodQuery.UNIT_DONG;
 import com.example.yongyong.common.converter.OptionJson;
 import com.example.yongyong.common.exception.BusinessException;
 import com.example.yongyong.common.exception.ErrorCode;
+import com.example.yongyong.common.query.PeriodQuery;
+import com.example.yongyong.common.query.PeriodService;
+import com.example.yongyong.common.response.PeriodResponse;
 import com.example.yongyong.recommendation.dto.RecommendationResponse;
 import com.example.yongyong.yongin.entity.MlExplanation;
 import com.example.yongyong.yongin.entity.MlRegion;
@@ -21,19 +24,29 @@ public class RecommendationService {
 
   private final MlExplanationRepository mlExplanationRepository;
   private final MlRegionRepository mlRegionRepository;
+  private final PeriodService periodService;
 
-  public RecommendationResponse getRecommendation(String regionCode, Integer year) {
+  public RecommendationResponse getRecommendation(String regionCode, PeriodQuery query) {
+    periodService.checkMonth(query);
+    Integer month =
+        PeriodService.monthOrLatest(
+            query, mlExplanationRepository.findMonths(query.year(), UNIT_DONG));
+    if (month == null) {
+      throw new BusinessException(ErrorCode.RECOMMENDATION_NOT_FOUND);
+    }
     MlExplanation explanation =
         mlExplanationRepository
-            .findByYearAndUnitAndRegionCd(year, UNIT_DONG, regionCode)
+            .findByYearAndMonthAndUnitAndRegionCd(query.year(), month, UNIT_DONG, regionCode)
             .orElseThrow(() -> new BusinessException(ErrorCode.RECOMMENDATION_NOT_FOUND));
     Boolean lowReliability =
         mlRegionRepository
-            .findByYearAndUnitAndRegionCd(year, UNIT_DONG, regionCode)
+            .findByYearAndMonthAndUnitAndRegionCd(query.year(), month, UNIT_DONG, regionCode)
             .map(MlRegion::getLowReliability)
             .orElse(false);
 
+    // options의 score는 같은 달 ml_suitability와 같은 값 (11/8 DB 861건 일치 확인)
     return new RecommendationResponse(
+        PeriodResponse.latest(query, month),
         explanation.getIsKeep(),
         explanation.getCreatedAt(),
         explanation.getOptions().stream().map(this::toOption).toList(),

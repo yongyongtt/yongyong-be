@@ -10,12 +10,4 @@ public record PeriodQuery(
     @Parameter(description = "월(1~12). 없으면 연간", example = "2") @Min(1) @Max(12) Integer month) {
 
   public static final String UNIT_DONG = "dong";
-
-  public static Integer toMonth(int monthKey) {
-    return monthKey == 0 ? null : monthKey;
-  }
-
-  public int monthKey() {
-    return month == null ? 0 : month;
-  }
 }

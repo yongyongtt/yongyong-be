@@ -2,25 +2,15 @@ package com.example.yongyong.yongin.repository;
 
 import com.example.yongyong.yongin.entity.MlPriority;
 import java.util.List;
-import java.util.Optional;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
 
 public interface MlPriorityRepository extends Repository<MlPriority, MlPriority.Id> {
 
-  interface PeriodKey {
-    Integer getYear();
+  List<MlPriority> findByYearAndUnit(Integer year, String unit);
 
-    Integer getMonthKey();
-  }
+  List<MlPriority> findByYearAndMonthAndUnit(Integer year, Integer month, String unit);
 
-  List<MlPriority> findByYearAndMonthKeyAndUnit(Integer year, Integer monthKey, String unit);
-
-  Optional<MlPriority> findByYearAndMonthKeyAndUnitAndRegionCd(
-      Integer year, Integer monthKey, String unit, String regionCd);
-
-  @Query(
-      "select distinct p.year as year, p.monthKey as monthKey from MlPriority p"
-          + " where p.unit = :unit order by p.year, p.monthKey")
-  List<PeriodKey> findPeriods(String unit);
+  @Query("select distinct p.month from MlPriority p where p.year = :year and p.unit = :unit")
+  List<Integer> findMonths(Integer year, String unit);
 }

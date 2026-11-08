@@ -109,7 +109,7 @@ class RegionMetricRepositoryTest extends MariaDbTestSupport {
   @DisplayName("feat_city_month 12개월을 읽어 시 평균 연간 값을 구할 수 있다")
   void featCityMonth() {
     // SELECT ROUND(SUM(taxi_matched)/SUM(taxi_req)*100,1), ROUND(AVG(fp_avg)) FROM feat_city_month
-    // WHERE year=2025; -- 53.8, 5938
+    // WHERE year=2025; -- 53.8, 6267 (11/8 seed. 11/5에는 5938)
     List<FeatCityMonth> rows = featCityMonthRepository.findByYear(2025);
 
     assertThat(rows).hasSize(12);
@@ -117,6 +117,6 @@ class RegionMetricRepositoryTest extends MariaDbTestSupport {
     double requested = rows.stream().mapToDouble(FeatCityMonth::getTaxiReq).sum();
     double fpAvg = rows.stream().mapToDouble(FeatCityMonth::getFpAvg).average().orElseThrow();
     assertThat(matched / requested * 100).isCloseTo(53.8, within(0.05));
-    assertThat(fpAvg).isCloseTo(5938, within(0.5));
+    assertThat(fpAvg).isCloseTo(6267.08, within(0.01));
   }
 }
