@@ -54,7 +54,7 @@ class PeriodRuleIntegrationTest extends MariaDbTestSupport {
   @DisplayName("연간 대시보드는 월 평균 점수와 재계산 순위(동점 공동 1위)를 쓰고 period는 1~12월 YEAR_ALL이다")
   void annualDashboard() throws Exception {
     // 지역별 AVG(score_total) (month IS NOT NULL) → ROUND → RANK():
-    //   이동읍 65.83→66 1위, 원삼면 66.01→66 1위, 모현읍·백암면 63 3위
+    //   원삼면 66.01→66 1위, 이동읍 65.83→66 1위 (같은 순위는 반올림 전 점수 높은 순), 백암면 62.69·모현읍 62.58→63 3위
     // 평균 50 이상 9곳, 지역 평균들의 평균 38.31, MAX(trained_at) 2026-11-08 20:55
     mockMvc
         .perform(get("/api/dashboard").param("year", "2025"))
@@ -66,11 +66,13 @@ class PeriodRuleIntegrationTest extends MariaDbTestSupport {
         .andExpect(jsonPath("$.data.summary.regionCount").value(38))
         .andExpect(jsonPath("$.data.summary.vulnerableCount").value(9))
         .andExpect(jsonPath("$.data.summary.avgScore").value(38.3))
-        .andExpect(jsonPath("$.data.top10[0].regionName").value("이동읍"))
+        .andExpect(jsonPath("$.data.top10[0].regionName").value("원삼면"))
         .andExpect(jsonPath("$.data.top10[0].rank").value(1))
-        .andExpect(jsonPath("$.data.top10[1].regionName").value("원삼면"))
+        .andExpect(jsonPath("$.data.top10[1].regionName").value("이동읍"))
         .andExpect(jsonPath("$.data.top10[1].rank").value(1))
+        .andExpect(jsonPath("$.data.top10[2].regionName").value("백암면"))
         .andExpect(jsonPath("$.data.top10[2].rank").value(3))
+        .andExpect(jsonPath("$.data.top10[3].regionName").value("모현읍"))
         .andExpect(jsonPath("$.data.top10[3].rank").value(3))
         .andExpect(jsonPath("$.data.top10[4].rank").value(5));
   }
