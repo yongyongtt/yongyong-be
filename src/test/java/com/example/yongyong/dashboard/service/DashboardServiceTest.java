@@ -60,7 +60,7 @@ class DashboardServiceTest {
   }
 
   @Test
-  @DisplayName("월을 고르면 그 달 행만 쓰고 순위도 정수 점수로 다시 매긴다")
+  @DisplayName("월을 고르면 그 달 행만 쓰고 순위도 정수 점수로 다시 매긴다, 같은 순위면 반올림 전 점수가 높은 지역이 먼저")
   void monthlyScores() {
     // 7월 동부동 60.2(DB 7위), 포곡읍 60.1(DB 8위) → 둘 다 60점 공동 1위
     given(mlPriorityRepository.findByYearAndMonthAndUnit(2025, 7, "dong"))
@@ -71,7 +71,20 @@ class DashboardServiceTest {
     assertThat(scores.months()).containsExactly(7);
     assertThat(scores.regions())
         .extracting(RegionScore::regionCode, RegionScore::score, RegionScore::rank)
-        .containsExactly(tuple("4146125000", 60, 1), tuple("4146154000", 60, 1));
+        .containsExactly(tuple("4146154000", 60, 1), tuple("4146125000", 60, 1));
+  }
+
+  @Test
+  @DisplayName("같은 순위에서 반올림 전 점수까지 같으면 regionCode 순이다")
+  void tieOrderByCode() {
+    given(mlPriorityRepository.findByYearAndMonthAndUnit(2025, 7, "dong"))
+        .willReturn(List.of(row(7, "B", 60.0), row(7, "A", 60.0), row(7, "C", 60.4)));
+
+    Scores scores = dashboardService.scores(new PeriodQuery(2025, 7));
+
+    assertThat(scores.regions())
+        .extracting(RegionScore::regionCode, RegionScore::rank)
+        .containsExactly(tuple("C", 1), tuple("A", 1), tuple("B", 1));
   }
 
   @Test

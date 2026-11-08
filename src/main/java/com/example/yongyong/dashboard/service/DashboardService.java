@@ -26,8 +26,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class DashboardService {
 
+  // 같은 순위 안에서는 반올림 전 점수가 높은 지역이 먼저, 그것도 같으면 regionCode 순
   public static final Comparator<RegionScore> RANK_ORDER =
-      Comparator.comparingInt(RegionScore::rank).thenComparing(RegionScore::regionCode);
+      Comparator.comparingInt(RegionScore::rank)
+          .thenComparing(Comparator.comparingDouble(RegionScore::rawScore).reversed())
+          .thenComparing(RegionScore::regionCode);
 
   private static final int TOP_LIMIT = 10;
   private static final int VULNERABLE_SCORE = 50;
@@ -119,8 +122,7 @@ public class DashboardService {
               return new RegionScore(
                   r.regionCode(), r.regionName(), r.gu(), r.rawScore(), r.score(), rank);
             })
-            .sorted(
-                Comparator.comparingInt(RegionScore::rank).thenComparing(RegionScore::regionCode))
+            .sorted(RANK_ORDER)
             .toList();
     List<Integer> months = rows.stream().map(MlPriority::getMonth).distinct().sorted().toList();
     return new Scores(months, ranked);
