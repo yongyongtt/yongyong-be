@@ -1,6 +1,6 @@
 # CLAUDE.md — 용인 교통 사각지대 진단 백엔드
 
-RULES_VERSION: R9  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 변경 이력"에 한 줄 남긴다)
+RULES_VERSION: R10  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 변경 이력"에 한 줄 남긴다)
 
 이 파일은 이 저장소에서 일하는 Claude가 매번 따라야 하는 규칙이다.
 규칙과 다른 방법이 더 낫다고 판단되면, 바로 바꾸지 말고 사용자에게 먼저 제안한다.
@@ -47,10 +47,10 @@ RULES_VERSION: R9  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 �
 ```
 {base}                         // 실제 패키지명은 build.gradle의 group 기준
 ├─ common
-│  ├─ response    ApiResponse (ErrorBody는 안쪽 record)
+│  ├─ response    ApiResponse (ErrorBody는 안쪽 record), PeriodResponse (공통 period)
 │  ├─ exception   ErrorCode, BusinessException, GlobalExceptionHandler
 │  ├─ config      SwaggerConfig, WebConfig
-│  ├─ query       PeriodQuery(year, month) 등 공통 요청 값
+│  ├─ query       PeriodQuery(year, month) 등 공통 요청 값, PeriodService (공통 달·월 검사)
 │  └─ converter   JSON 컬럼용 AttributeConverter (StringListConverter, OptionListConverter)
 ├─ yongin         yongin DB 읽기 전용 엔티티 + repository (테이블당 하나, 여러 기능이 같이 씀)
 │  ├─ entity      MlPriority, MlRegion, MlExplanation, MlModelInfo,
@@ -91,7 +91,8 @@ RULES_VERSION: R9  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 �
 | --- | --- | --- |
 | `INVALID_REQUEST` | 400 | 파라미터 검증 실패 (year 없음, month 1~12 밖, regionCode 형식) |
 | `REGION_NOT_FOUND` | 404 | 연도 데이터는 있는데 regionCode가 없음 |
-| `PERIOD_NOT_FOUND` | 404 | 연도 데이터가 아예 없거나, 지역은 있는데 고른 월이 적재되지 않음 (decisions D7) |
+| `PERIOD_NOT_FOUND` | 404 | 연도 데이터가 아예 없음. API 5는 `feat_region_month`에 그 달 행이 없을 때도 (decisions D7) |
+| `SUITABILITY_NOT_READY` | 404 | 고른 month가 공통 달(`ml_priority`·`ml_region`·`ml_explanation`에 모두 있는 달)에 없음. 메시지 "존재하지 않는 달입니다." (decisions D7, D16) |
 | `RECOMMENDATION_NOT_FOUND` | 404 | `ml_explanation`에 그 지역 행이 없음 (없는 연도, 없는 지역 포함) |
 | `RESOURCE_NOT_FOUND` | 404 | 없는 경로 |
 | `METHOD_NOT_ALLOWED` | 405 | 지원하지 않는 HTTP 메서드 |
@@ -105,10 +106,8 @@ RULES_VERSION: R9  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 �
 - 필요한 컬럼만 필드로 둔다. 쓰지 않는 컬럼은 매핑하지 않는다
 - 컬럼명은 Spring Boot 기본 이름 규칙(camelCase → snake_case)으로 맞춘다. 규칙과 다를 때만 `@Column(name = ...)`
 
-**ml_priority는 예외 (연간 행의 month가 NULL)**
-- 복합키 컬럼에 NULL이 있으면 Hibernate가 그 행을 엔티티로 만들지 못한다. 그래서 `@Table` 대신 `@Subselect`로 `COALESCE(month, 0) AS month_key`를 만들어 `monthKey`를 키로 쓴다
-- 코드에서는 `monthKey = 0`이 연간, 1~12가 월이다. `PeriodQuery`가 month null → 0으로 바꿔 넘긴다. 응답의 `month`/`availableMonths`에서는 다시 null로 바꾼다
-- `@Synchronize("ml_priority")`를 같이 단다
+**`ml_` 엔티티의 month (연간 NULL 행은 쓰지 않음)**
+- `MlPriority`, `MlRegion`, `MlExplanation`, `MlModelInfo`는 키에 `month`를 넣고 `@SQLRestriction("month is not null")`을 단다. DB의 연간(month NULL) 행은 어떤 조회에도 섞이지 않는다 (decisions D16)
 
 **조회 규칙**
 - repository는 `org.springframework.data.repository.Repository<T, ID>`를 상속하고 **조회 메서드만** 선언한다. `JpaRepository`·`CrudRepository`를 쓰지 않는다 (save/delete가 아예 없게)
@@ -116,10 +115,17 @@ RULES_VERSION: R9  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 �
 - 쿼리 문자열을 이어붙여 만들지 않는다. 파라미터는 항상 바인딩
 - 서비스 클래스에 `@Transactional(readOnly = true)`
 
+**연간·월 규칙 (decisions D16)**
+- month 있음 → 그 달 행만. month 없음(연간) → 숫자(점수·순위·개수)는 그 연도 월별 값의 평균, 분류·문장(유형, 신뢰도, 추천, 요약)은 그 테이블의 최근 달(그 year·unit의 가장 큰 month)
+- 점수는 정수로 반올림해 내리고(지도 포함), 순위는 그 정수 점수로 다시 매긴다. 동점은 같은 순위, 다음 순위는 건너뛴다 (1, 2, 3, 3, 5). DB `rank_total`, `is_vulnerable`은 쓰지 않는다. 취약지역 = 정수 점수 50점 이상
+- 월 검사는 `PeriodService.checkMonth` 하나로 한다 (API 1~5, 7). 월 범위를 하드코딩하지 않고 조회 시점에 테이블에 있는 달로 계산한다
+- 모든 응답은 `data` 맨 앞에 `period { year, months, type }`(`common.response.PeriodResponse`)를 내린다. type = `YEAR_ALL`(그 해 월별 값 전체 반영) / `YEAR_LATEST`(그 해 최근 달) / `MONTH`(고른 달), months는 항상 배열. API 3·4는 유형 기준으로 `typePeriod`를 하나 더 내린다. 고를 수 있는 연·월 목록은 응답에 넣지 않는다
+
 **조회 조건·값**
-- `ml_` 조회 조건: `year`, `unit`, `regionCd` + `ml_priority`만 `monthKey`. `ml_region`, `ml_explanation`에는 month가 없다 → 월을 골라도 연간 값을 쓴다
+- `ml_` 조회 조건: `year`, `unit`, `regionCd` + `month`
 - `feat_` 테이블은 키가 다르다: 지역 = `dongCd`, 연간 값은 `FeatRegion`(month 없음), 월별 값은 `FeatRegionMonth`(year, month)
-- 비율 컬럼(0~1)은 서버가 ×100 해서 % 값으로 내리고 **정수로 반올림** (decisions D14). 점수(0~100)는 DB 값 그대로. 단, API 1 TOP 10, API 3, API 4 헤더, API 7 `options`의 `score`는 정수로 반올림 (decisions D12). API 5 지표와 API 6 값도 모두 정수로 반올림 (decisions D14)
+- 비율 컬럼(0~1)은 서버가 ×100 해서 % 값으로 내리고 **정수로 반올림** (decisions D14). 점수는 API 1~4 모두(지도 포함) 정수로 반올림, API 7 `options`의 `score`도 정수 (decisions D12, D16). API 5 지표와 API 6 값도 모두 정수로 반올림 (decisions D14)
+- 반올림은 사사오입(Java `Math.round`)이다. 기대값을 SQL로 확인할 때 MariaDB `ROUND(double)`은 .5를 짝수로 보내므로 `FLOOR(x + 0.5)`를 쓴다
 - JSON 문자열 컬럼(`options`, `reasons`, `cautions`, `type_chips`)은 엔티티 필드에 `@Convert`로 `common.converter`의 AttributeConverter를 달아 `List`로 받는다. 변환기의 쓰기 방향(`convertToDatabaseColumn`)은 예외를 던진다 (읽기 전용)
 - `tinyint(1)` 컬럼(`is_vulnerable`, `is_keep`, `low_reliability`)은 `Boolean`으로 매핑한다. 그래서 개수는 `SUM` 대신 서비스에서 `Boolean` 값으로 걸러 센다 (decisions D13)
 - 이번 범위는 행정동 38개만 구현한다. API에 `unit` 파라미터를 두지 않고, 서비스가 항상 `unit = "dong"`으로 조회한다 (decisions D6). DB에는 `village` 행도 있으니 `unit` 조건을 빼지 않는다
@@ -193,15 +199,15 @@ API 하나당 최소 아래 세 종류를 만든다.
 | 서비스 | 순수 단위 테스트 (Mockito) | 변환 규칙: ×100·반올림, '추천'/'제외' → `RECOMMENDED`/`EXCLUDED`, 연간/월 분기, 데이터 없을 때 예외 |
 | repository | `@DataJpaTest` + `@AutoConfigureTestDatabase(replace = NONE)` + Testcontainers MariaDB | 엔티티 매핑과 쿼리 메서드가 seed 데이터에서 기대값을 내는지 |
 
-- seed: `src/test/resources/db/seed-dong-2025.sql` (11/5 덤프에서 행정동만 추린 것). 공개 저장소라 git에 올리지 않는다 (decisions D11)
+- seed: `src/test/resources/db/seed-dong-2025.sql` (11/8 DB에서 행정동만 추린 것, 연간 NULL 행 포함). 공개 저장소라 git에 올리지 않는다 (decisions D11)
 - `@DataJpaTest` repository 테스트에는 `@Tag("db")`를 붙인다. CI는 `-PexcludeTags=db`로 이 태그를 빼고 돌고, 로컬 `./gradlew test`는 전부 돈다. CI가 repository 테스트를 대신 돌려주지 않으므로 PR 전에 로컬에서 전체 테스트를 통과시킨다
 - 컨테이너 DB 이름은 `yongin`으로 만든다 (`.withDatabaseName("yongin")`). 엔티티가 `catalog = "yongin"`, `@Subselect`가 `yongin.ml_priority`를 가리키기 때문
 - MariaDB 컨테이너는 테스트 전체가 하나를 같이 쓴다 (`MariaDbTestSupport`의 static 컨테이너 하나). 테스트 클래스마다 새로 띄우지 않는다
-- 엔티티를 새로 만들면 그 엔티티 repository 테스트에 매핑 확인을 넣는다: seed 행 수, 키 조회 1건, JSON·Boolean 필드 값 (특히 `MlPriority`는 `monthKey` 목록이 `[0, 2]`인지)
+- 엔티티를 새로 만들면 그 엔티티 repository 테스트에 매핑 확인을 넣는다: seed 행 수, 키 조회 1건, JSON·Boolean 필드 값 (특히 `ml_` 엔티티는 월 목록에 NULL이 없는지)
 - 기대값은 **seed에서 SQL로 직접 확인한 값만** 쓴다. 숫자를 추측하거나 명세 예시에서 그냥 베끼지 않는다. 확인에 쓴 SQL을 테스트 주석에 한 줄로 남긴다
-- 이미 확인된 기준값 (2025, dong, 연간): 지역 38개, 취약지역 9개, 평균 39.1, 1위 원삼면 68.1 / 포곡읍(4146125000) 60.4·7위 / 시 평균 택시 성사율 53.8%, 생활인구 5,938명, 정류장 81.6개, 고령 17.7%
+- 이미 확인된 기준값 (11/8 DB, 2025, dong, 연간): 지역 38개, 취약지역 9개, 평균 38.3, 이동읍·원삼면 66점 공동 1위 / 포곡읍(4146125000) 59점·7위 (7월 60점, 동부동과 공동 7위) / 공통 달 1~7 / 시 평균 택시 성사율 53.8%, 생활인구 6,267명, 정류장 81.6개, 고령 17.7%
 - 테스트 이름은 `@DisplayName`에 한글 문장으로: `"월을 고르면 그 달 점수와 순위를 내린다"`
-- 실패 케이스를 반드시 넣는다: 없는 regionCode, 범위 밖 month, 적재 안 된 month(예: 5월)
+- 실패 케이스를 반드시 넣는다: 없는 regionCode, 범위 밖 month, 공통 달에 없는 month(지금은 8월)
 - 테스트도 간결하게: 정상 케이스 1~2개 + 위 실패 케이스면 충분하다. 같은 내용을 여러 층에서 반복 검증하지 않는다 (예: 파라미터 검증은 컨트롤러 테스트에서만, SQL 결과는 repository 테스트에서만)
 
 ## 9. 자동 검증 게이트 (CI)
@@ -245,3 +251,4 @@ GitHub Actions `ci.yml`이 PR마다 아래를 돌리고, 하나라도 실패하�
 | 2026-11-06 | R7 | 비율 기본 표기를 정수 반올림으로 변경, API 6 값도 정수 | 사용자 결정, decisions D14 |
 | 2026-11-06 | R8 | API 7 `options` `score` 정수 반올림, 없는 연도와 지역도 `RECOMMENDATION_NOT_FOUND` | 사용자 결정, decisions D12 |
 | 2026-11-07 | R9 | 앱은 `yongin`에 SELECT 전용 계정 하나로 접속, `yongin_app` 제거 | 사용자 결정 (배포 준비 중 `yongin_app`을 쓰는 엔티티·테이블이 없음을 확인), decisions D15 |
+| 2026-11-08 | R10 | 연간 = 서버 재계산(숫자 월 평균, 분류·문장 최근 달), NULL 행 미사용(`@SQLRestriction`), 정수 점수·재계산 순위, `SUITABILITY_NOT_READY`, 공통 `period`, seed 11/8 기준, 확인 SQL 반올림 | 사용자 결정 (11/8 DB에 테이블마다 다른 월별 행 추가), decisions D4·D7·D12 변경, D16 |
