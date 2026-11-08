@@ -25,6 +25,7 @@
   - 숫자(점수·순위·개수) → 그 연도의 월별 값으로 재계산. 점수 = 지역별 월 평균 `score_total`
   - 분류·문장(유형, 신뢰도, 추천 수단, 요약, AI 추천) → 그 테이블의 **최근 달**(그 `year`·`unit`에 행이 있는 가장 큰 month)
 - 점수는 정수로 반올림해 내리고, 순위는 그 정수 점수로 다시 매긴다. 동점은 같은 순위, 다음 순위는 건너뛴다 (1, 2, 3, 3, 5). 월을 고른 경우도 DB `rank_total` 대신 재계산 순위를 쓴다
+- 정렬: 순위 → 같은 순위면 반올림 전 점수(연간은 월 평균) 높은 순 → `region_cd` (decisions D12). 예: 연간 원삼면 66.01이 이동읍 65.83보다 먼저, 둘 다 1위
 - 취약지역 = 정수 점수 50점 이상 (DB `is_vulnerable` 대신)
 - 고를 수 있는 달(공통 달) = `ml_priority`·`ml_region`·`ml_explanation`에 공통으로 있는 달. 월 범위는 하드코딩하지 않고 조회 시점에 계산한다 (응답에는 내리지 않음)
 - `month`를 골랐는데 공통 달에 없으면 **404 `SUITABILITY_NOT_READY`** (API 1~5, 7 공통, 한 메서드로 판단). 연간 조회는 이 규칙과 무관
@@ -90,15 +91,15 @@ Query: `year`, `month`
   "top10": [
     {
       "rank": 1,
-      "regionCode": "4146125600",
-      "regionName": "이동읍",
+      "regionCode": "4146134000",
+      "regionName": "원삼면",
       "gu": "처인구",
       "score": 66
     },
     {
       "rank": 1,
-      "regionCode": "4146134000",
-      "regionName": "원삼면",
+      "regionCode": "4146125600",
+      "regionName": "이동읍",
       "gu": "처인구",
       "score": 66
     }
@@ -113,7 +114,7 @@ Query: `year`, `month`
 | regionCount | 지역 수 |
 | vulnerableCount | 정수 점수 50점 이상인 지역 수 |
 | avgScore | 지역 점수(반올림 전, 연간은 지역별 월 평균)의 평균, 소수 첫째 자리 |
-| top10 | 정수 점수·재계산 순위로 정렬(`rank`, `region_cd`) 상위 10개 |
+| top10 | 위 "연간·월 규칙"의 정렬로 상위 10개 |
 
 공통 조건: `year = :year AND unit = 'dong' AND month IS NOT NULL` + 월 `month = :month`
 에러: 연도 데이터가 없으면 `PERIOD_NOT_FOUND`, 공통 달에 없는 월이면 `SUITABILITY_NOT_READY`
@@ -131,8 +132,8 @@ Query: `year`, `month`
   "period": { "year": 2025, "months": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "type": "YEAR_ALL" },
   "regions": [
     {
-      "regionCode": "4146125600",
-      "regionName": "이동읍",
+      "regionCode": "4146134000",
+      "regionName": "원삼면",
       "gu": "처인구",
       "score": 66,
       "rank": 1
@@ -148,7 +149,7 @@ Query: `year`, `month`
 | rank | 정수 점수로 재계산한 순위 |
 | period | 1번과 같다 |
 
-- 조건은 1번과 같다. 정렬: `rank`, `region_cd` (decisions D12)
+- 조건과 정렬은 1번과 같다 (decisions D12)
 - 종합 취약도만 내린다 (교통 수요·공급 부족도 없음)
 - 읍·면·동 검색은 이 응답의 38개를 프론트가 `regionName`으로 거른다 → 검색 API 없음
 - 색 구간(0~20, 20~40, …)은 프론트가 칠한다. 지도 경계는 프론트 정적 GeoJSON(`code` = regionCode)
@@ -245,7 +246,7 @@ Query: `year`, `month`
 | period, typePeriod | 3번과 같다 | — |
 | type.name, desc | `ml_region.type_nm`, `type_desc` | `typePeriod` |
 | type.chips | `ml_region.type_chips` (JSON 문자열 배열, 그대로) | `typePeriod` |
-| sameTypeRegions | `ml_region`에서 같은 `year`, `typePeriod` 달, `type_nm`인 지역, 자기 자신 제외·중복 없음 (`unit = 'dong'`). 이름은 `ml_priority`. 정렬: header와 같은 기준의 `rank`, `region_cd` | `typePeriod` |
+| sameTypeRegions | `ml_region`에서 같은 `year`, `typePeriod` 달, `type_nm`인 지역, 자기 자신 제외·중복 없음 (`unit = 'dong'`). 이름은 `ml_priority`. 정렬: 1번과 같다 | `typePeriod` |
 | reliability | `ml_region.low_reliability`(1 → true), `reliability_note` | `typePeriod` |
 
 - (i) 유형 안내 모달 6종은 프론트 고정 문구 → 응답에 없음
