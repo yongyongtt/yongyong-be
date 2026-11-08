@@ -5,6 +5,8 @@ import static com.example.yongyong.common.query.PeriodQuery.UNIT_DONG;
 import com.example.yongyong.common.exception.BusinessException;
 import com.example.yongyong.common.exception.ErrorCode;
 import com.example.yongyong.common.query.PeriodQuery;
+import com.example.yongyong.common.query.PeriodService;
+import com.example.yongyong.common.response.PeriodResponse;
 import com.example.yongyong.region.dto.RegionComparisonResponse;
 import com.example.yongyong.region.dto.RegionComparisonResponse.Metric;
 import com.example.yongyong.region.dto.RegionTrendResponse;
@@ -32,8 +34,10 @@ public class RegionMetricService {
   private final FeatRegionMonthRepository featRegionMonthRepository;
   private final FeatCityRepository featCityRepository;
   private final FeatCityMonthRepository featCityMonthRepository;
+  private final PeriodService periodService;
 
   public RegionComparisonResponse getComparison(String regionCode, PeriodQuery query) {
+    periodService.checkMonth(query);
     Integer year = query.year();
     FeatRegion region =
         featRegionRepository
@@ -59,8 +63,17 @@ public class RegionMetricService {
       regionFloatingPop = regionMonth.getFpAvg();
       cityFloatingPop = cityMonth.map(FeatCityMonth::getFpAvg).orElse(null);
     }
+    // 연간 지역 값은 feat_region(연간 테이블). months는 그 지역의 feat_region_month 달
+    // 정류장·고령은 월을 골라도 항상 feat_region 연간 값 (api-spec 5번)
+    PeriodResponse period =
+        PeriodResponse.all(
+            query,
+            query.month() == null
+                ? months(featRegionMonthRepository.findByYearAndDongCd(year, regionCode))
+                : null);
 
     return new RegionComparisonResponse(
+        period,
         List.of(
             new Metric(
                 "TAXI_MATCH_RATE",
@@ -99,6 +112,7 @@ public class RegionMetricService {
     List<FeatCityMonth> cityMonths = featCityMonthRepository.findByYear(year);
 
     return new RegionTrendResponse(
+        new PeriodResponse(year, months(rows), PeriodResponse.Type.YEAR_ALL),
         rows.stream()
             .sorted(Comparator.comparing(FeatRegionMonth::getMonth))
             .map(row -> toPoint(row, cityMonths))
@@ -116,6 +130,10 @@ public class RegionMetricService {
             findCityMonth(cityMonths, row.getMonth())
                 .map(FeatCityMonth::getTaxiUnmatchedRate)
                 .orElse(null)));
+  }
+
+  private List<Integer> months(List<FeatRegionMonth> rows) {
+    return rows.stream().map(FeatRegionMonth::getMonth).distinct().sorted().toList();
   }
 
   private BusinessException regionMissing(Integer year) {

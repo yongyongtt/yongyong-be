@@ -1,8 +1,10 @@
 package com.example.yongyong.recommendation.dto;
 
+import com.example.yongyong.common.response.PeriodResponse;
 import java.util.List;
 
 public record RecommendationResponse(
+    PeriodResponse period,
     Boolean isKeep,
     String createdAt,
     List<Option> options,

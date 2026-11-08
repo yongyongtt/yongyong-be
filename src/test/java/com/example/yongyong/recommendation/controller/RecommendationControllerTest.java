@@ -8,11 +8,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.example.yongyong.common.exception.BusinessException;
 import com.example.yongyong.common.exception.ErrorCode;
+import com.example.yongyong.common.query.PeriodQuery;
+import com.example.yongyong.common.response.PeriodResponse;
 import com.example.yongyong.recommendation.dto.RecommendationResponse;
 import com.example.yongyong.recommendation.service.RecommendationService;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -29,9 +33,10 @@ class RecommendationControllerTest {
   @Test
   @DisplayName("추천을 ApiResponse로 내리고 필드명과 null이 명세와 같다")
   void returnsRecommendation() throws Exception {
-    given(recommendationService.getRecommendation("4146125000", 2025))
+    given(recommendationService.getRecommendation("4146125000", new PeriodQuery(2025, null)))
         .willReturn(
             new RecommendationResponse(
+                new PeriodResponse(2025, List.of(7), PeriodResponse.Type.YEAR_LATEST),
                 false,
                 "2026-11-05 11:03",
                 List.of(
@@ -85,7 +90,41 @@ class RecommendationControllerTest {
         .andExpect(jsonPath("$.data.options[1].isCurrent").value(true))
         .andExpect(jsonPath("$.data.reasons[0]").value("추천 이유"))
         .andExpect(jsonPath("$.data.cautions[0]").value("주의"))
-        .andExpect(jsonPath("$.data.lowReliability").value(false));
+        .andExpect(jsonPath("$.data.lowReliability").value(false))
+        .andExpect(jsonPath("$.data.period.year").value(2025))
+        .andExpect(jsonPath("$.data.period.months[0]").value(7))
+        .andExpect(jsonPath("$.data.period.type").value("YEAR_LATEST"));
+  }
+
+  @Test
+  @DisplayName("month를 받아 서비스에 넘긴다")
+  void passesMonth() throws Exception {
+    given(recommendationService.getRecommendation("4146125000", new PeriodQuery(2025, 2)))
+        .willReturn(
+            new RecommendationResponse(
+                new PeriodResponse(2025, List.of(2), PeriodResponse.Type.MONTH),
+                false,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                false));
+
+    mockMvc
+        .perform(get(URL).param("year", "2025").param("month", "2"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.period.months[0]").value(2))
+        .andExpect(jsonPath("$.data.period.type").value("MONTH"));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"0", "13", "abc"})
+  @DisplayName("month가 1~12 범위의 숫자가 아니면 400 INVALID_REQUEST를 내린다")
+  void invalidMonth(String month) throws Exception {
+    mockMvc
+        .perform(get(URL).param("year", "2025").param("month", month))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
   }
 
   @Test

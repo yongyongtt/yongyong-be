@@ -26,6 +26,7 @@
 - 상태: 확정 (2026-11-05)
 - `month` 없음 = 연간(`month IS NULL`), 1~12 = 그 달. 유형·AI 추천(`ml_region`, `ml_explanation`)은 month 컬럼이 없어 항상 연간
 - 현재 월별 ML 값은 2월만 있고 나머지 달은 추후 적재
+- 변경 (2026-11-08): `month` 없음 = `month IS NULL` 행 → NULL 행은 쓰지 않고 서버가 월별 행으로 재계산(D16). 유형·추천도 월을 고르면 그 달 값 / 11/8 DB에서 `ml_region`·`ml_explanation`에도 month가 생겼고, 테이블마다 NULL 행 유무와 월 범위가 달라 한 규칙으로 통일
 
 ## D5. AI 추천 다시 생성(8번)은 이번 범위 제외
 - 상태: 확정 (2026-11-05)
@@ -43,6 +44,7 @@
 - 이유: 2월만 있는 지금, 5월 요청에 빈 화면을 주면 "데이터 없음"과 "취약지역 0개"를 구분할 수 없다. 프론트는 `availableMonths`로 고를 수 있는 달만 보여준다
 - 변경 (2026-11-05): 상태 제안 → 확정 / 사용자 결정
 - 변경 (2026-11-05): 지역 API도 연도 데이터가 아예 없으면 `PERIOD_NOT_FOUND`, 연도는 있는데 지역이 없으면 `REGION_NOT_FOUND` / API 1·2와 맞춘다. 사용자 결정
+- 변경 (2026-11-08): 고른 월이 공통 달(`ml_priority`·`ml_region`·`ml_explanation`)에 없으면 `PERIOD_NOT_FOUND` → 404 `SUITABILITY_NOT_READY` "존재하지 않는 달입니다." (API 1~5, 7 공통, `PeriodService.checkMonth`) / 사용자 결정. 판단 순서는 연도 → 월 → 지역
 
 ## D8. 응답 형식 ApiResponse로 통일, 예외는 BusinessException + ControllerAdvice
 - 상태: 확정 (2026-11-05)
@@ -74,6 +76,7 @@
 - 변경 (2026-11-06): 지역 상세(API 4) 헤더 `score`도 정수로 반올림, 같은 유형 지역은 `rank_total`, `region_cd` 순 / 사용자 결정. 미리보기와 같은 지역의 숫자를 맞춘다
 - 변경 (2026-11-06): AI 추천(API 7) `options[].score`도 정수로 반올림, null은 유지 / 사용자 결정. 없는 연도와 지역은 구분하지 않고 `RECOMMENDATION_NOT_FOUND`
 - 변경 (2026-11-05): 지도(API 2)도 `rank_total`, `region_cd` 순으로 정렬한다. 점수는 정수로 바꾸지 않고 DB 값 그대로 내린다 / 사용자 결정
+- 변경 (2026-11-08): 지도 점수도 정수로 반올림하고, 모든 순위는 `rank_total` 대신 정수 점수로 재계산(동점 같은 순위, 다음 순위 건너뜀), 정렬은 재계산 순위, `region_cd` / 사용자 결정. 화면에 보이는 숫자가 기준
 
 ## D13. 행 수가 적은 조회는 서비스에서 계산
 - 상태: 확정 (2026-11-05)
@@ -93,3 +96,10 @@
 - 고름: 앱이 `yongin`에 바로 접속하고, 계정은 `GRANT SELECT ON yongin.*` 하나 / 고르지 않음: 빈 `yongin_app`에 접속하고 `yongin` SELECT + `yongin_app` CRUD 혼합 권한
 - 이유: 엔티티 8개가 모두 `catalog = "yongin"`이고 `yongin_app`에는 테이블이 없다. 쓰지 않는 DB와 쓰기 권한을 없애면 읽기 전용이 계정 권한으로 확실해진다. 서버 계정은 `db/init/01-app-user.sh`가 만든다
 - 다시 볼 때: API 8(D5)에서 결과를 별도 테이블에 저장하기로 하면 쓰기용 DB·권한을 다시 정한다
+
+## D16. 연간은 DB 연간 행 대신 서버가 월별 행으로 계산
+- 상태: 확정 (2026-11-08)
+- 고름: `month IS NULL` 행은 쓰지 않는다. 연간 숫자(점수·순위·개수) = 월별 값 평균, 분류·문장(유형, 신뢰도, 추천, 요약) = 그 테이블의 최근 달. 점수는 정수, 순위는 정수 점수로 재계산, 취약지역 = 정수 50점 이상. 응답은 7개 API 공통 `period { year, months, type(YEAR_ALL / YEAR_LATEST / MONTH) }`, API 3·4는 `typePeriod` 추가. 고를 수 있는 연·월 목록은 응답에서 뺀다 / 고르지 않음: DB 연간 NULL 행 사용, 테이블마다 다른 연간 규칙, 기준 필드(`scoreBasis` 등)를 값마다 따로 내리기, `availableMonths`를 응답에 유지
+- 이유: 11/8 DB에서 `ml_priority`·`ml_suitability`는 1~12월 + NULL 행, `ml_region`·`ml_explanation`·`ml_model_info`는 1~7월만(NULL 행 없음)이라 테이블마다 연간 행 유무와 월 범위가 달랐다. 한 규칙으로 통일하고, 월 범위는 조회 시점에 계산해 데이터가 들어오면 코드 수정 없이 반영된다. 기준 필드는 프론트가 쓸 데가 적어 연·월·종류만 남겼고, 선택 목록은 프론트가 가진다
+- 세부: API 5 연간 지역 값은 `feat_region`(연간 전용 테이블, 택시 성사율이 월별 건수 가중 평균과 일치)을 그대로 쓴다. API 7 options 점수는 같은 달 `ml_suitability`와 861건 일치해 엔티티를 추가하지 않고 options 값을 쓴다
+- 다시 볼 때: 프론트가 고를 수 있는 달을 알아야 하면 공통 달 목록을 응답에 다시 넣는다 (`PeriodService.availableMonths`는 남아 있음)

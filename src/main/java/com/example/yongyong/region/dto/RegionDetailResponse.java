@@ -1,14 +1,17 @@
 package com.example.yongyong.region.dto;
 
+import com.example.yongyong.common.response.PeriodResponse;
 import java.util.List;
 
 public record RegionDetailResponse(
-    Header header, Period period, Reliability reliability, Type type) {
+    PeriodResponse period,
+    PeriodResponse typePeriod,
+    Header header,
+    Reliability reliability,
+    Type type) {
 
   public record Header(
       String regionCode, String regionName, String gu, Integer score, Integer rank) {}
-
-  public record Period(Integer year, Integer month, List<Integer> availableMonths) {}
 
   public record Reliability(Boolean low, String note) {}
 

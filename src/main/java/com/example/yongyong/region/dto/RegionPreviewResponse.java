@@ -1,8 +1,11 @@
 package com.example.yongyong.region.dto;
 
+import com.example.yongyong.common.response.PeriodResponse;
 import java.util.List;
 
 public record RegionPreviewResponse(
+    PeriodResponse period,
+    PeriodResponse typePeriod,
     String regionCode,
     String regionName,
     String gu,

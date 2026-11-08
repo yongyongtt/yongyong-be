@@ -5,13 +5,18 @@ import static com.example.yongyong.common.query.PeriodQuery.UNIT_DONG;
 import com.example.yongyong.common.exception.BusinessException;
 import com.example.yongyong.common.exception.ErrorCode;
 import com.example.yongyong.common.query.PeriodQuery;
+import com.example.yongyong.common.query.PeriodService;
+import com.example.yongyong.common.response.PeriodResponse;
 import com.example.yongyong.dashboard.dto.DashboardMapResponse;
 import com.example.yongyong.dashboard.dto.DashboardResponse;
 import com.example.yongyong.yongin.entity.MlPriority;
 import com.example.yongyong.yongin.repository.MlModelInfoRepository;
 import com.example.yongyong.yongin.repository.MlPriorityRepository;
-import com.example.yongyong.yongin.repository.MlPriorityRepository.PeriodKey;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,72 +26,108 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class DashboardService {
 
+  public static final Comparator<RegionScore> RANK_ORDER =
+      Comparator.comparingInt(RegionScore::rank).thenComparing(RegionScore::regionCode);
+
   private static final int TOP_LIMIT = 10;
+  private static final int VULNERABLE_SCORE = 50;
 
   private final MlPriorityRepository mlPriorityRepository;
   private final MlModelInfoRepository mlModelInfoRepository;
+  private final PeriodService periodService;
+
+  // API 1~4가 같이 쓰는 지역별 점수. regions는 rank, regionCode 순
+  public record Scores(List<Integer> months, List<RegionScore> regions) {
+
+    public PeriodResponse period(PeriodQuery query) {
+      return PeriodResponse.all(query, months);
+    }
+  }
+
+  // rawScore: 그 달 score_total 또는 월 평균 (반올림 전), score: 정수 반올림, rank: score 기준 재계산
+  public record RegionScore(
+      String regionCode, String regionName, String gu, double rawScore, int score, int rank) {}
 
   public DashboardResponse getDashboard(PeriodQuery query) {
-    Integer year = query.year();
-    List<MlPriority> rows = findRows(query);
+    periodService.checkMonth(query);
+    Scores scores = scores(query);
 
-    List<PeriodKey> periods = mlPriorityRepository.findPeriods(UNIT_DONG);
     return new DashboardResponse(
-        new DashboardResponse.Period(
-            year,
-            query.month(),
-            periods.stream().map(PeriodKey::getYear).distinct().toList(),
-            periods.stream()
-                .filter(period -> period.getYear().equals(year))
-                .map(period -> PeriodQuery.toMonth(period.getMonthKey()))
-                .toList(),
-            mlModelInfoRepository.findLatestTrainedAt(year)),
+        scores.period(query),
+        mlModelInfoRepository.findLatestTrainedAt(query.year(), query.month()),
         new DashboardResponse.Summary(
-            rows.size(),
-            rows.stream().filter(MlPriority::getIsVulnerable).count(),
-            averageScore(rows)),
-        rows.stream()
-            .sorted(MlPriority.RANK_ORDER)
+            scores.regions().size(),
+            scores.regions().stream().filter(r -> r.score() >= VULNERABLE_SCORE).count(),
+            averageScore(scores.regions())),
+        scores.regions().stream()
             .limit(TOP_LIMIT)
-            .map(this::toTopRegion)
+            .map(r ->
+                new DashboardResponse.TopRegion(
+                    r.rank(), r.regionCode(), r.regionName(), r.gu(), r.score()))
             .toList());
   }
 
   public DashboardMapResponse getMap(PeriodQuery query) {
+    periodService.checkMonth(query);
+    Scores scores = scores(query);
     return new DashboardMapResponse(
-        findRows(query).stream().sorted(MlPriority.RANK_ORDER).map(this::toMapRegion).toList());
+        scores.period(query),
+        scores.regions().stream()
+            .map(r ->
+                new DashboardMapResponse.MapRegion(
+                    r.regionCode(), r.regionName(), r.gu(), r.score(), r.rank()))
+            .toList());
   }
 
-  private List<MlPriority> findRows(PeriodQuery query) {
+  // month가 있으면 그 달 행, 없으면 월 평균. 행이 없으면 PERIOD_NOT_FOUND
+  public Scores scores(PeriodQuery query) {
     List<MlPriority> rows =
-        mlPriorityRepository.findByYearAndMonthKeyAndUnit(
-            query.year(), query.monthKey(), UNIT_DONG);
+        query.month() == null
+            ? mlPriorityRepository.findByYearAndUnit(query.year(), UNIT_DONG)
+            : mlPriorityRepository.findByYearAndMonthAndUnit(
+                query.year(), query.month(), UNIT_DONG);
     if (rows.isEmpty()) {
       throw new BusinessException(ErrorCode.PERIOD_NOT_FOUND);
     }
-    return rows;
+
+    Map<String, List<MlPriority>> byRegion =
+        rows.stream()
+            .collect(
+                Collectors.groupingBy(MlPriority::getRegionCd, TreeMap::new, Collectors.toList()));
+    List<RegionScore> unranked =
+        byRegion.values().stream()
+            .map(regionRows -> {
+              MlPriority first = regionRows.getFirst();
+              double raw =
+                  regionRows.stream()
+                      .mapToDouble(MlPriority::getScoreTotal)
+                      .average()
+                      .orElseThrow();
+              return new RegionScore(
+                  first.getRegionCd(),
+                  first.getRegionNm(),
+                  first.getGu(),
+                  raw,
+                  (int) Math.round(raw),
+                  0);
+            })
+            .toList();
+    List<RegionScore> ranked =
+        unranked.stream()
+            .map(r -> {
+              int rank = 1 + (int) unranked.stream().filter(o -> o.score() > r.score()).count();
+              return new RegionScore(
+                  r.regionCode(), r.regionName(), r.gu(), r.rawScore(), r.score(), rank);
+            })
+            .sorted(
+                Comparator.comparingInt(RegionScore::rank).thenComparing(RegionScore::regionCode))
+            .toList();
+    List<Integer> months = rows.stream().map(MlPriority::getMonth).distinct().sorted().toList();
+    return new Scores(months, ranked);
   }
 
-  private DashboardMapResponse.MapRegion toMapRegion(MlPriority priority) {
-    return new DashboardMapResponse.MapRegion(
-        priority.getRegionCd(),
-        priority.getRegionNm(),
-        priority.getGu(),
-        priority.getScoreTotal(),
-        priority.getRankTotal());
-  }
-
-  private double averageScore(List<MlPriority> rows) {
-    double average = rows.stream().mapToDouble(MlPriority::getScoreTotal).average().orElseThrow();
+  private double averageScore(List<RegionScore> regions) {
+    double average = regions.stream().mapToDouble(RegionScore::rawScore).average().orElseThrow();
     return Math.round(average * 10) / 10.0;
-  }
-
-  private DashboardResponse.TopRegion toTopRegion(MlPriority priority) {
-    return new DashboardResponse.TopRegion(
-        priority.getRankTotal(),
-        priority.getRegionCd(),
-        priority.getRegionNm(),
-        priority.getGu(),
-        (int) Math.round(priority.getScoreTotal()));
   }
 }

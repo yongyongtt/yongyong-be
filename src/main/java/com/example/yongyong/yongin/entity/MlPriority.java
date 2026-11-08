@@ -2,37 +2,26 @@ package com.example.yongyong.yongin.entity;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.IdClass;
-import java.util.Comparator;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import org.hibernate.annotations.Immutable;
-import org.hibernate.annotations.Subselect;
-import org.hibernate.annotations.Synchronize;
+import org.hibernate.annotations.SQLRestriction;
 
 @Entity
 @Immutable
-@Subselect(
-    """
-    SELECT year, COALESCE(month, 0) AS month_key, unit, region_cd, region_nm, gu,
-           score_total, rank_total, is_vulnerable
-    FROM yongin.ml_priority
-    """)
-@Synchronize("ml_priority")
+@Table(catalog = "yongin", name = "ml_priority")
+@SQLRestriction("month is not null")
 @IdClass(MlPriority.Id.class)
 @Getter
 public class MlPriority {
 
-  public static final Comparator<MlPriority> RANK_ORDER =
-      Comparator.comparing(MlPriority::getRankTotal).thenComparing(MlPriority::getRegionCd);
-
-  public record Id(Integer year, Integer monthKey, String unit, String regionCd) {}
+  public record Id(Integer year, Integer month, String unit, String regionCd) {}
 
   @jakarta.persistence.Id private Integer year;
-  @jakarta.persistence.Id private Integer monthKey;
+  @jakarta.persistence.Id private Integer month;
   @jakarta.persistence.Id private String unit;
   @jakarta.persistence.Id private String regionCd;
   private String regionNm;
   private String gu;
   private Double scoreTotal;
-  private Integer rankTotal;
-  private Boolean isVulnerable;
 }

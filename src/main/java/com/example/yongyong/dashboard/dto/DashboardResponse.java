@@ -1,15 +1,10 @@
 package com.example.yongyong.dashboard.dto;
 
+import com.example.yongyong.common.response.PeriodResponse;
 import java.util.List;
 
-public record DashboardResponse(Period period, Summary summary, List<TopRegion> top10) {
-
-  public record Period(
-      Integer year,
-      Integer month,
-      List<Integer> availableYears,
-      List<Integer> availableMonths,
-      String updatedAt) {}
+public record DashboardResponse(
+    PeriodResponse period, String updatedAt, Summary summary, List<TopRegion> top10) {
 
   public record Summary(long regionCount, long vulnerableCount, Double avgScore) {}
 

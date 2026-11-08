@@ -9,13 +9,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.example.yongyong.common.exception.BusinessException;
 import com.example.yongyong.common.exception.ErrorCode;
+import com.example.yongyong.common.response.PeriodResponse;
 import com.example.yongyong.region.dto.RegionComparisonResponse;
 import com.example.yongyong.region.dto.RegionDetailResponse;
 import com.example.yongyong.region.dto.RegionPreviewResponse;
 import com.example.yongyong.region.dto.RegionTrendResponse;
 import com.example.yongyong.region.service.RegionMetricService;
 import com.example.yongyong.region.service.RegionService;
-import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -44,6 +44,8 @@ class RegionControllerTest {
     given(regionService.getPreview(eq("4146125000"), any()))
         .willReturn(
             new RegionPreviewResponse(
+                new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
+                new PeriodResponse(2025, List.of(7), PeriodResponse.Type.YEAR_LATEST),
                 "4146125000",
                 "포곡읍",
                 "처인구",
@@ -69,7 +71,13 @@ class RegionControllerTest {
         .andExpect(jsonPath("$.data.isKeep").value(false))
         .andExpect(jsonPath("$.data.recommended[0].mode").value("DRT"))
         .andExpect(jsonPath("$.data.recommended[0].name").value("똑버스"))
-        .andExpect(jsonPath("$.data.summary").value("요약"));
+        .andExpect(jsonPath("$.data.summary").value("요약"))
+        .andExpect(jsonPath("$.data.period.year").value(2025))
+        .andExpect(jsonPath("$.data.period.months[1]").value(2))
+        .andExpect(jsonPath("$.data.period.type").value("YEAR_ALL"))
+        .andExpect(jsonPath("$.data.typePeriod.year").value(2025))
+        .andExpect(jsonPath("$.data.typePeriod.months[0]").value(7))
+        .andExpect(jsonPath("$.data.typePeriod.type").value("YEAR_LATEST"));
   }
 
   @Test
@@ -77,7 +85,18 @@ class RegionControllerTest {
   void returnsNulls() throws Exception {
     given(regionService.getPreview(eq("4146125000"), any()))
         .willReturn(
-            new RegionPreviewResponse("4146125000", "포곡읍", "처인구", 60, 7, null, false, null, null));
+            new RegionPreviewResponse(
+                new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
+                new PeriodResponse(2025, List.of(7), PeriodResponse.Type.YEAR_LATEST),
+                "4146125000",
+                "포곡읍",
+                "처인구",
+                60,
+                7,
+                null,
+                false,
+                null,
+                null));
 
     mockMvc
         .perform(get(URL).param("year", "2025"))
@@ -121,8 +140,9 @@ class RegionControllerTest {
     given(regionService.getDetail(eq("4146125000"), any()))
         .willReturn(
             new RegionDetailResponse(
+                new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
+                new PeriodResponse(2025, List.of(7), PeriodResponse.Type.YEAR_LATEST),
                 new RegionDetailResponse.Header("4146125000", "포곡읍", "처인구", 60, 7),
-                new RegionDetailResponse.Period(2025, null, Arrays.asList(null, 2)),
                 new RegionDetailResponse.Reliability(false, null),
                 new RegionDetailResponse.Type(
                     "정류장 접근 취약형",
@@ -140,9 +160,11 @@ class RegionControllerTest {
         .andExpect(jsonPath("$.data.header.score").value(60))
         .andExpect(jsonPath("$.data.header.rank").value(7))
         .andExpect(jsonPath("$.data.period.year").value(2025))
-        .andExpect(jsonPath("$.data.period.month").value((Object) null))
-        .andExpect(jsonPath("$.data.period.availableMonths[0]").value((Object) null))
-        .andExpect(jsonPath("$.data.period.availableMonths[1]").value(2))
+        .andExpect(jsonPath("$.data.period.months[1]").value(2))
+        .andExpect(jsonPath("$.data.period.type").value("YEAR_ALL"))
+        .andExpect(jsonPath("$.data.typePeriod.year").value(2025))
+        .andExpect(jsonPath("$.data.typePeriod.months[0]").value(7))
+        .andExpect(jsonPath("$.data.typePeriod.type").value("YEAR_LATEST"))
         .andExpect(jsonPath("$.data.reliability.low").value(false))
         .andExpect(jsonPath("$.data.reliability.note").value((Object) null))
         .andExpect(jsonPath("$.data.type.name").value("정류장 접근 취약형"))
@@ -158,8 +180,9 @@ class RegionControllerTest {
     given(regionService.getDetail(eq("4146125000"), any()))
         .willReturn(
             new RegionDetailResponse(
+                new PeriodResponse(2025, List.of(2), PeriodResponse.Type.MONTH),
+                new PeriodResponse(2025, List.of(2), PeriodResponse.Type.MONTH),
                 new RegionDetailResponse.Header("4146125000", "포곡읍", "처인구", 60, 7),
-                new RegionDetailResponse.Period(2025, null, List.of(2)),
                 new RegionDetailResponse.Reliability(false, null),
                 null));
 
@@ -214,6 +237,7 @@ class RegionControllerTest {
     given(regionMetricService.getComparison(eq("4146125000"), any()))
         .willReturn(
             new RegionComparisonResponse(
+                new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
                 List.of(
                     new RegionComparisonResponse.Metric(
                         "TAXI_MATCH_RATE", "택시 호출 성사율", "%", 53, 54),
@@ -230,6 +254,7 @@ class RegionControllerTest {
         .andExpect(jsonPath("$.data.metrics[0].unit").value("%"))
         .andExpect(jsonPath("$.data.metrics[0].region").value(53))
         .andExpect(jsonPath("$.data.metrics[0].cityAvg").value(54))
+        .andExpect(jsonPath("$.data.period.type").value("YEAR_ALL"))
         .andExpect(jsonPath("$.data.metrics[1].region").value(148))
         .andExpect(jsonPath("$.data.metrics[1].cityAvg").value(82))
         .andExpect(jsonPath("$.data.metrics[2].region").value((Object) null))
@@ -281,6 +306,7 @@ class RegionControllerTest {
     given(regionMetricService.getUnmatchedTrend("4146125000", 2025))
         .willReturn(
             new RegionTrendResponse(
+                new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
                 List.of(
                     new RegionTrendResponse.Point(2025, 1, 45, 2779, 1538, 45),
                     new RegionTrendResponse.Point(2025, 2, 37, 2571, 1631, null))));
@@ -289,6 +315,7 @@ class RegionControllerTest {
         .perform(get(TREND_URL).param("year", "2025"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.period.type").value("YEAR_ALL"))
         .andExpect(jsonPath("$.data.points[0].year").value(2025))
         .andExpect(jsonPath("$.data.points[0].month").value(1))
         .andExpect(jsonPath("$.data.points[0].unmatchedRate").value(45))

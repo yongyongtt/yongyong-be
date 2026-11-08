@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.tuple;
 import com.example.yongyong.MariaDbTestSupport;
 import com.example.yongyong.common.converter.OptionJson;
 import com.example.yongyong.yongin.entity.MlExplanation;
-import com.example.yongyong.yongin.entity.MlPriority;
 import com.example.yongyong.yongin.entity.MlRegion;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -23,141 +22,88 @@ class RegionRepositoryTest extends MariaDbTestSupport {
   private static final String POGOK = "4146125000";
   private static final String KEEP_REGION = "4146151000";
 
-  @Autowired private MlPriorityRepository mlPriorityRepository;
   @Autowired private MlRegionRepository mlRegionRepository;
   @Autowired private MlExplanationRepository mlExplanationRepository;
 
   @Test
-  @DisplayName("키로 연간과 월 점수를 각각 1건 조회한다")
-  void priorityByKey() {
-    // SELECT score_total, rank_total FROM ml_priority WHERE region_cd='4146125000'; -- 연간 60.4, 7 /
-    // 2월 60.4, 6
-    MlPriority annual = priority(0);
-    assertThat(annual.getRegionNm()).isEqualTo("포곡읍");
-    assertThat(annual.getGu()).isEqualTo("처인구");
-    assertThat(annual.getScoreTotal()).isEqualTo(60.4);
-    assertThat(annual.getRankTotal()).isEqualTo(7);
-    assertThat(priority(2).getRankTotal()).isEqualTo(6);
+  @DisplayName("ml_region과 ml_explanation의 월 목록은 1~7월이다")
+  void months() {
+    // SELECT DISTINCT month FROM ml_region / ml_explanation WHERE year=2025 AND unit='dong'; -- 1~7
+    assertThat(mlRegionRepository.findMonths(2025, "dong"))
+        .containsExactlyInAnyOrder(1, 2, 3, 4, 5, 6, 7);
+    assertThat(mlExplanationRepository.findMonths(2025, "dong"))
+        .containsExactlyInAnyOrder(1, 2, 3, 4, 5, 6, 7);
   }
 
   @Test
-  @DisplayName("적재되지 않은 월이나 없는 지역은 조회되지 않는다")
-  void priorityMissing() {
-    assertThat(mlPriorityRepository.findByYearAndMonthKeyAndUnitAndRegionCd(2025, 5, "dong", POGOK))
-        .isEmpty();
-    assertThat(
-            mlPriorityRepository.findByYearAndMonthKeyAndUnitAndRegionCd(
-                2025, 0, "dong", "0000000000"))
-        .isEmpty();
-  }
-
-  @Test
-  @DisplayName("지역의 사각지대 유형을 조회한다")
-  void regionType() {
-    // SELECT type_nm, type_desc FROM ml_region WHERE region_cd='4146125000';
+  @DisplayName("ml_region을 월 키로 1건 조회하고 칩 JSON과 신뢰도를 매핑한다, 없는 달은 비어 있다")
+  void regionByMonth() {
+    // SELECT type_nm, type_desc, type_chips, low_reliability, reliability_note FROM ml_region
+    //   WHERE year=2025 AND month=7 AND unit='dong' AND region_cd='4146125000';
     MlRegion region =
-        mlRegionRepository.findByYearAndUnitAndRegionCd(2025, "dong", POGOK).orElseThrow();
+        mlRegionRepository
+            .findByYearAndMonthAndUnitAndRegionCd(2025, 7, "dong", POGOK)
+            .orElseThrow();
 
+    assertThat(region.getMonth()).isEqualTo(7);
     assertThat(region.getTypeNm()).isEqualTo("정류장 접근 취약형");
     assertThat(region.getTypeDesc()).isEqualTo("버스는 다니지만 정류장까지 멀어 걷기 힘든 지역이에요");
-  }
-
-  @Test
-  @DisplayName("칩 JSON을 목록으로 변환하고 신뢰도 컬럼을 매핑한다")
-  void regionDetail() {
-    // SELECT type_chips, low_reliability, reliability_note FROM ml_region WHERE
-    // region_cd='4146125000';
-    MlRegion region =
-        mlRegionRepository.findByYearAndUnitAndRegionCd(2025, "dong", POGOK).orElseThrow();
-
     assertThat(region.getTypeChips())
         .containsExactly("정류장까지 도보 김 · 12분 (평균 7분)", "정류장 500m 안 면적 좁음 · 54% (평균 77%)");
     assertThat(region.getLowReliability()).isFalse();
     assertThat(region.getReliabilityNote()).isNull();
+    assertThat(mlRegionRepository.findByYearAndMonthAndUnitAndRegionCd(2025, 8, "dong", POGOK))
+        .isEmpty();
   }
 
   @Test
-  @DisplayName("유형 이름으로 같은 유형 지역 6곳을 조회한다")
-  void regionsBySameType() {
-    // SELECT region_cd FROM ml_region WHERE type_nm='정류장 접근 취약형'; -- 6곳
-    assertThat(mlRegionRepository.findByYearAndUnitAndTypeNm(2025, "dong", "정류장 접근 취약형"))
+  @DisplayName("같은 달 같은 유형 지역 6곳을 중복 없이 조회한다")
+  void sameType() {
+    // SELECT region_cd FROM ml_region WHERE year=2025 AND month=7 AND unit='dong'
+    //   AND type_nm='정류장 접근 취약형'; -- 6곳
+    assertThat(mlRegionRepository.findByYearAndMonthAndUnitAndTypeNm(2025, 7, "dong", "정류장 접근 취약형"))
         .extracting(MlRegion::getRegionCd)
+        .doesNotHaveDuplicates()
         .containsExactlyInAnyOrder(
-            "4146125600", "4146125300", "4146125000", "4146556000", "4146353500", "4146553000");
+            "4146125000", "4146125300", "4146125600", "4146353500", "4146553000", "4146556000");
   }
 
   @Test
-  @DisplayName("options JSON을 목록으로 변환하고 Boolean과 요약을 매핑한다")
-  void explanation() {
-    // SELECT is_keep, summary, JSON_EXTRACT(options,'$[*].mode') FROM ml_explanation WHERE
-    // region_cd='4146125000';
-    MlExplanation explanation =
-        mlExplanationRepository.findByYearAndUnitAndRegionCd(2025, "dong", POGOK).orElseThrow();
-
-    assertThat(explanation.getIsKeep()).isFalse();
-    assertThat(explanation.getSummary()).isEqualTo("정류장까지 멀어 걷기 힘들어 똑버스 도입 검토");
-    assertThat(explanation.getOptions())
-        .extracting(OptionJson::mode, OptionJson::name, OptionJson::status)
-        .containsExactly(
-            tuple("DRT", "똑버스", "추천"),
-            tuple("BUS", "노선버스", "제외"),
-            tuple("HAPPY_TAXI", "행복택시", "제외"));
-  }
-
-  @Test
-  @DisplayName("options의 전체 필드와 추천 문장, 생성 시각을 매핑한다")
-  void explanationDetail() {
-    // SELECT created_at, options, reasons, cautions FROM ml_explanation WHERE
-    // region_cd='4146125000';
-    MlExplanation explanation =
-        mlExplanationRepository.findByYearAndUnitAndRegionCd(2025, "dong", POGOK).orElseThrow();
-
-    assertThat(explanation.getCreatedAt()).isEqualTo("2026-11-05 11:03");
-    assertThat(explanation.getReasons()).hasSize(2);
-    assertThat(explanation.getReasons().getFirst())
-        .isEqualTo("정류장까지 걷는 시간이 12분으로 용인시 평균(7분)보다 길어, 걸어서 이동하기 힘든 주민을 위한 수단이 필요해요.");
-    assertThat(explanation.getCautions())
-        .containsExactly("똑버스 실제 운영 구역 자료가 없어, 기존 운영 구역과 겹치는지 확인이 필요해요.");
-
-    OptionJson drt = explanation.getOptions().getFirst();
-    assertThat(drt.subtitle()).isEqualTo("수요응답형 버스");
-    assertThat(drt.desc()).isEqualTo("정해진 노선 없이 호출에 따라 운행해요");
-    assertThat(drt.rank()).isEqualTo(1);
-    assertThat(drt.score()).isEqualTo(80.7);
-    assertThat(drt.isCurrent()).isFalse();
-    assertThat(drt.reasons()).hasSize(2);
-    assertThat(drt.facts()).hasSize(3);
-    assertThat(drt.together()).isNull();
-
-    OptionJson bus = explanation.getOptions().get(1);
-    assertThat(bus.rank()).isNull();
-    assertThat(bus.score()).isEqualTo(46.8);
-    assertThat(bus.isCurrent()).isTrue();
-    assertThat(explanation.getOptions().getLast().facts()).isEmpty();
-  }
-
-  @Test
-  @DisplayName("현행 유지 지역은 is_keep이 true이고 options 맨 앞이 KEEP이다")
-  void keepExplanation() {
-    // SELECT is_keep, JSON_EXTRACT(options,'$[0].mode') FROM ml_explanation WHERE
-    // region_cd='4146151000'; -- 1, KEEP
+  @DisplayName("ml_explanation을 월 키로 1건 조회하고 options·문장·생성 시각을 그 달 값으로 매핑한다")
+  void explanationByMonth() {
+    // SELECT is_keep, summary, created_at, JSON_EXTRACT(options,'$[*].score'), JSON_LENGTH(reasons)
+    //   FROM ml_explanation WHERE year=2025 AND month=7 AND region_cd='4146125000';
+    //   -- 0, '정류장이 멀고 걷기 힘들어 똑버스 도입 검토', 2026-11-08 20:56, [80.5, 45.8, 27.5], 2
     MlExplanation explanation =
         mlExplanationRepository
-            .findByYearAndUnitAndRegionCd(2025, "dong", KEEP_REGION)
+            .findByYearAndMonthAndUnitAndRegionCd(2025, 7, "dong", POGOK)
+            .orElseThrow();
+
+    assertThat(explanation.getIsKeep()).isFalse();
+    assertThat(explanation.getSummary()).isEqualTo("정류장이 멀고 걷기 힘들어 똑버스 도입 검토");
+    assertThat(explanation.getCreatedAt()).isEqualTo("2026-11-08 20:56");
+    assertThat(explanation.getReasons()).hasSize(2);
+    assertThat(explanation.getOptions())
+        .extracting(OptionJson::mode, OptionJson::status, OptionJson::score)
+        .containsExactly(
+            tuple("DRT", "추천", 80.5), tuple("BUS", "제외", 45.8), tuple("HAPPY_TAXI", "제외", 27.5));
+    assertThat(mlExplanationRepository.findByYearAndMonthAndUnitAndRegionCd(2025, 8, "dong", POGOK))
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName("현행 유지 지역은 is_keep이 true이고 options 맨 앞이 점수 없는 KEEP이다")
+  void keepExplanation() {
+    // SELECT is_keep, JSON_EXTRACT(options,'$[0].mode'), JSON_EXTRACT(options,'$[0].score')
+    //   FROM ml_explanation WHERE year=2025 AND month=7 AND region_cd='4146151000'; -- 1, KEEP,
+    // null
+    MlExplanation explanation =
+        mlExplanationRepository
+            .findByYearAndMonthAndUnitAndRegionCd(2025, 7, "dong", KEEP_REGION)
             .orElseThrow();
 
     assertThat(explanation.getIsKeep()).isTrue();
-    OptionJson keep = explanation.getOptions().getFirst();
-    assertThat(keep.mode()).isEqualTo("KEEP");
-    assertThat(keep.name()).isEqualTo("현행 유지");
-    assertThat(keep.status()).isEqualTo("추천");
-    assertThat(keep.rank()).isEqualTo(1);
-    assertThat(keep.score()).isNull();
-  }
-
-  private MlPriority priority(int monthKey) {
-    return mlPriorityRepository
-        .findByYearAndMonthKeyAndUnitAndRegionCd(2025, monthKey, "dong", POGOK)
-        .orElseThrow();
+    assertThat(explanation.getOptions().getFirst().mode()).isEqualTo("KEEP");
+    assertThat(explanation.getOptions().getFirst().score()).isNull();
   }
 }
