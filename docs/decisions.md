@@ -28,9 +28,10 @@
 - 현재 월별 ML 값은 2월만 있고 나머지 달은 추후 적재
 - 변경 (2026-11-08): `month` 없음 = `month IS NULL` 행 → NULL 행은 쓰지 않고 서버가 월별 행으로 재계산(D16). 유형·추천도 월을 고르면 그 달 값 / 11/8 DB에서 `ml_region`·`ml_explanation`에도 month가 생겼고, 테이블마다 NULL 행 유무와 월 범위가 달라 한 규칙으로 통일
 
-## D5. AI 추천 다시 생성(8번)은 이번 범위 제외
+## D5. ML 실행(8번)은 범위 포함 (처음엔 AI 추천 다시 생성으로 제외)
 - 상태: 확정 (2026-11-05)
 - 이유: 결과 저장 위치(FastAPI가 `ml_explanation` 덮어쓰기 vs `yongin_app` 별도 테이블) 미정. 정해지면 `yongin_app` 필요 여부도 함께 결정
+- 변경 (2026-11-10): 범위 제외 → 확정(범위 포함). 지역별 다시 생성 가안 대신 yong_ml FastAPI가 기간 전체를 다시 계산해 `ml_` 테이블을 덮어쓰고, Spring은 실행 요청·상태 조회만 한다 (D17). 저장은 ML이 하므로 `yongin_app`은 여전히 쓰지 않음
 
 ## D6. 이번 범위는 행정동만, unit 파라미터 없음
 - 상태: 확정 (2026-11-05)
@@ -97,6 +98,7 @@
 - 고름: 앱이 `yongin`에 바로 접속하고, 계정은 `GRANT SELECT ON yongin.*` 하나 / 고르지 않음: 빈 `yongin_app`에 접속하고 `yongin` SELECT + `yongin_app` CRUD 혼합 권한
 - 이유: 엔티티 8개가 모두 `catalog = "yongin"`이고 `yongin_app`에는 테이블이 없다. 쓰지 않는 DB와 쓰기 권한을 없애면 읽기 전용이 계정 권한으로 확실해진다. 서버 계정은 `db/init/01-app-user.sh`가 만든다
 - 다시 볼 때: API 8(D5)에서 결과를 별도 테이블에 저장하기로 하면 쓰기용 DB·권한을 다시 정한다
+- 변경 (2026-11-10): 앱 계정은 그대로 SELECT 전용. ML 컨테이너용 계정을 따로 둔다: `yongin.*` SELECT + `ml_` 테이블 5개(`ml_priority`, `ml_suitability`, `ml_region`, `ml_explanation`, `ml_model_info`)에만 INSERT·DELETE·CREATE·DROP·ALTER (yong_ml `io_db.upsert`가 행 삭제·추가, 경우에 따라 테이블 교체·컬럼 추가를 함). 계정 값은 `.env`, 생성은 root / 이유: 앱의 읽기 전용은 유지하고 ML 쓰기는 `ml_`로만 제한 (D17)
 
 ## D16. 연간은 DB 연간 행 대신 서버가 월별 행으로 계산
 - 상태: 확정 (2026-11-08)
@@ -104,3 +106,9 @@
 - 이유: 11/8 DB에서 `ml_priority`·`ml_suitability`는 1~12월 + NULL 행, `ml_region`·`ml_explanation`·`ml_model_info`는 1~7월만(NULL 행 없음)이라 테이블마다 연간 행 유무와 월 범위가 달랐다. 한 규칙으로 통일하고, 월 범위는 조회 시점에 계산해 데이터가 들어오면 코드 수정 없이 반영된다. 기준 필드는 프론트가 쓸 데가 적어 연·월·종류만 남겼고, 선택 목록은 프론트가 가진다
 - 세부: API 5 연간 지역 값은 `feat_region`(연간 전용 테이블, 택시 성사율이 월별 건수 가중 평균과 일치)을 그대로 쓴다. API 7 options 점수는 같은 달 `ml_suitability`와 861건 일치해 엔티티를 추가하지 않고 options 값을 쓴다
 - 다시 볼 때: 프론트가 고를 수 있는 달을 알아야 하면 공통 달 목록을 응답에 다시 넣는다 (`PeriodService.availableMonths`는 남아 있음)
+
+## D17. ML 실행(API 8)은 Spring이 yong_ml FastAPI를 부르기만 한다
+- 상태: 확정 (2026-11-10)
+- 고름: `POST /api/ml/run`, `GET /api/ml/run/status`를 FastAPI와 같은 경로로 공개(nginx `/api/`). FastAPI 응답(RunStatus)을 그대로 `data`에 담고, 409 → `ML_RUNNING`(409, 실행 중 재요청 거절), 422 → `INVALID_REQUEST`, 500·연결 실패·타임아웃 → `ML_UNAVAILABLE`(502). Spring이 year·month를 먼저 검사. `period`는 내리지 않음, 시각은 ISO 그대로. ML 서버는 compose `ml` 서비스(외부 포트 없음), Dockerfile은 이 저장소에 두고 yong_ml은 서버에 클론만 / 고르지 않음: 지역별 다시 생성 가안, `/api/internal/` 비공개 경로, FastAPI 끝날 때까지 대기, yong_ml 저장소 수정, Dockerfile 없이 시작 시 pip 설치
+- 이유: FastAPI는 기간 전체를 약 15분 동안 다시 계산하고 202로 바로 응답한다. 해커톤 시연에서는 호출 가능함만 보여주면 되므로 Spring은 얇게 중계만 한다. 시연에서 프론트가 눌러야 해서 공개하고, 동시 실행은 ML의 `GET_LOCK`으로 하나만 돈다. API 7의 `createdAt` 형식은 건드리지 않는다
+- 다시 볼 때: 해커톤 후 공개 운영이면 인증 또는 비공개 경로로 바꾼다

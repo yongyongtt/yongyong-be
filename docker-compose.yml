@@ -14,6 +14,7 @@ services:
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
       APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000}
+      ML_BASE_URL: http://ml:8000
     expose:
       - "8080"
     mem_limit: 768m
@@ -36,6 +37,8 @@ services:
       MARIADB_DATABASE: yongin
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
+      ML_DB_USERNAME: ${ML_DB_USERNAME:-}
+      ML_DB_PASSWORD: ${ML_DB_PASSWORD:-}
     command: ["--character-set-server=utf8mb4"]
     volumes:
       - db-data:/var/lib/mysql
@@ -48,6 +51,40 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+    labels: *labels
+
+  # yong_ml FastAPI: reruns run_all.py for one period and writes the ml_ tables (decisions D17).
+  # Not exposed outside; only app calls it. app does not depend on it, so APIs 1-7 run without it
+  ml:
+    build:
+      context: ./ml
+      additional_contexts:
+        yong_ml: ${YONG_ML_DIR:-../yong_ml}
+    image: yong-ml:latest
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: yongin
+      DB_USER: ${ML_DB_USERNAME:-}
+      DB_PASSWORD: ${ML_DB_PASSWORD:-}
+      # Empty key = no LLM calls, cards use template sentences (saved LLM cards are reused)
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      # startedAt/finishedAt are in the container time zone
+      TZ: Asia/Seoul
+    expose:
+      - "8000"
+    mem_limit: 768m
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # /openapi.json instead of /api/ml/run/status, which queries the DB lock on every call
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/openapi.json', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     labels: *labels
 
   nginx:

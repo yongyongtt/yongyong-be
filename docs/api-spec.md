@@ -1,8 +1,9 @@
-# API 명세 v3 (API 1~7)
+# API 명세 v3 (API 1~8)
 
 원본: Notion `API 명세서 > API 목록(AI) v3` (2026-11-05 기준). 노션과 이 문서가 다르면 사용자에게 알린다.
 2026-11-08: 11/8 DB 월별 행 반영으로 연간 정의, 공통 `period`(availableYears·availableMonths 삭제, API 1 `updatedAt`은 `data` 바로 아래로), API 7 `month`, `SUITABILITY_NOT_READY` 추가 (decisions D16). 노션에도 반영 필요.
 8번 `POST /api/regions/{regionCode}/recommendation/regenerate`(AI 추천 다시 생성, 내부용)는 저장 위치 미정이라 이번 범위에서 **제외**한다.
+2026-11-10: 8번 가안을 폐기하고 yong_ml FastAPI(`api.py`) 기준 ML 실행 요청·상태 조회 2개로 다시 정함 (decisions D5, D17). 노션에도 반영 필요.
 
 ## 공통
 
@@ -58,6 +59,8 @@
 | `SUITABILITY_NOT_READY` | 404 | 요청한 달의 데이터가 없음(존재하지 않는 달). 메시지 "존재하지 않는 달입니다." |
 | `REGION_NOT_FOUND` | 404 | 연도 데이터는 있는데 regionCode가 없음 |
 | `RECOMMENDATION_NOT_FOUND` | 404 | `ml_explanation`에 그 지역 행이 없음 |
+| `ML_RUNNING` | 409 | ML 실행이 이미 돌고 있음 (API 8). 메시지 "이미 실행 중입니다." |
+| `ML_UNAVAILABLE` | 502 | ML 서버 연결 실패·타임아웃, ML 서버가 실행을 시작하지 못함 (API 8). 메시지 "ML 서버에 연결할 수 없습니다." |
 - `regionCode`: 행정동 코드 10자리 (`ml_*.region_cd` = `feat_*.dong_cd`), 예 `4146125000`
 - 비율은 % (0~100) 정수로 반올림 (decisions D14), 점수는 0~100 값으로 API별 표기를 따른다 (decisions D12)
 
@@ -70,6 +73,8 @@
 | 5 | GET | `/api/regions/{regionCode}/comparison` | 지역 상세 | O |
 | 6 | GET | `/api/regions/{regionCode}/unmatched-trend` | 지역 상세 | X |
 | 7 | GET | `/api/regions/{regionCode}/recommendation` | 지역 상세 | O |
+| 8-1 | POST | `/api/ml/run` | (시연용) | body |
+| 8-2 | GET | `/api/ml/run/status` | (시연용) | X |
 
 ---
 
@@ -437,3 +442,76 @@ options 변환 규칙
 - `score`는 값이 있으면 정수로 반올림한다 (decisions D12). 같은 달 `ml_suitability.score`와 같은 값이라 options 값을 그대로 쓴다 (11/8 DB 861건 일치 확인)
 - 문장은 수정하지 않고 그대로 전달한다
 - 에러: 공통 달에 없는 월이면 `SUITABILITY_NOT_READY`, 행이 없으면 `RECOMMENDATION_NOT_FOUND` (월 없이 부른 없는 연도, 없는 지역 포함)
+
+---
+
+## 8. ML 실행 — yong_ml FastAPI 호출 (decisions D17)
+
+yong_ml `run_all.py`(그 연·월의 `ml_` 테이블 5개를 다시 계산해 덮어씀, 약 15분)를 FastAPI로 시작하고 상태를 조회한다. Spring은 FastAPI를 부르기만 하고 DB에 쓰지 않는다. 결과 값은 API 1~7이 DB에서 읽는다.
+
+- 원본: `yong_ml 실행 API 명세서` (2026-11-08), yong_ml `api.py`
+- Spring → FastAPI: `{ML_BASE_URL}/api/ml/run`, `{ML_BASE_URL}/api/ml/run/status` (경로 동일). 타임아웃 연결 2초, 읽기 10초
+- 공개 경로다 (nginx `/api/` 그대로, 시연에서 프론트가 호출). 인증은 없고, 동시에 하나만 실행되므로 실행 중 재요청은 거절한다 (`ML_RUNNING`)
+- `period`를 내리지 않는다 (조회 API가 아니고 `year`·`month`가 응답에 있음, CLAUDE.md 5장 예외)
+- 시각(`startedAt`, `finishedAt`)은 FastAPI 값(ISO 8601, 서버 시간대) 그대로 내린다
+
+### 응답 `data` — RunStatus (8-1, 8-2 공통)
+
+```json
+{
+  "year": 2025,
+  "month": 1,
+  "status": "RUNNING",
+  "exitCode": null,
+  "startedAt": "2026-11-08T22:30:05+09:00",
+  "finishedAt": null,
+  "elapsedSec": 0,
+  "expectedSec": 900
+}
+```
+
+| 필드 | 설명 |
+| --- | --- |
+| year | 연도. 서버에서 `run_all.py`를 직접 돌린 실행이면 null |
+| month | 월. 연간이거나 서버에서 직접 돌린 실행이면 null |
+| status | `NONE`(API를 켠 뒤 실행한 적 없음) / `RUNNING` / `SUCCEEDED` / `FAILED` / `BUSY`(서버에서 직접 돌린 실행과 겹쳐 아무것도 안 함) |
+| exitCode | `run_all.py` 종료 코드. 실행 중이면 null |
+| startedAt, finishedAt | ISO 8601. 실행 중이면 finishedAt null |
+| elapsedSec | 걸린 시간(초). 실행 중이면 지금까지 |
+| expectedSec | 예상 실행 시간(초), 900 고정 |
+
+FastAPI 응답을 그대로 담는다 (필드 추가·변환 없음, null도 그대로).
+
+### 8-1. ML 실행 요청 — `POST /api/ml/run`
+
+Body (`application/json`)
+
+| 이름 | 필수 | 값 | 설명 |
+| --- | --- | --- | --- |
+| `year` | O | 2000~2100 | 기준 연도 |
+| `month` | X | 1~12 | 없거나 null이면 연간 |
+
+```json
+{ "year": 2025, "month": 1 }
+```
+
+- Spring이 먼저 검사한다: year 없음·범위 밖, month 1~12 밖이면 `INVALID_REQUEST` 400 (FastAPI를 부르지 않음)
+- 접수되면 `success: true`, `data` = RunStatus (`status: RUNNING`). 끝났는지는 8-2로 확인한다
+
+| FastAPI | 우리 응답 |
+| --- | --- |
+| 202 | 200 `success: true`, `data` = RunStatus |
+| 409 (이미 실행 중) | 409 `ML_RUNNING` |
+| 422 (형식 오류) | 400 `INVALID_REQUEST` (Spring 검사를 통과했으면 정상적으로는 오지 않음) |
+| 500 (시작 못 함), 연결 실패, 타임아웃 | 502 `ML_UNAVAILABLE` |
+
+### 8-2. ML 실행 상태 — `GET /api/ml/run/status`
+
+파라미터 없음. 지금 실행 중이거나 FastAPI를 켠 뒤 마지막으로 끝난 실행 하나.
+
+| FastAPI | 우리 응답 |
+| --- | --- |
+| 200 | 200 `success: true`, `data` = RunStatus |
+| 연결 실패, 타임아웃, 그 밖의 응답 | 502 `ML_UNAVAILABLE` |
+
+- 실행 기록은 FastAPI 메모리에만 있어 ML 서버를 다시 켜면 `NONE`이 된다
