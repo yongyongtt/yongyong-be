@@ -1,13 +1,13 @@
 # CLAUDE.md — 용인 교통 사각지대 진단 백엔드
 
-RULES_VERSION: R10  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 변경 이력"에 한 줄 남긴다)
+RULES_VERSION: R11  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 변경 이력"에 한 줄 남긴다)
 
 이 파일은 이 저장소에서 일하는 Claude가 매번 따라야 하는 규칙이다.
 규칙과 다른 방법이 더 낫다고 판단되면, 바로 바꾸지 말고 사용자에게 먼저 제안한다.
 
 ## 구현 원칙: 해커톤이다, 필요한 것만 간결하게
 
-목표는 11/14 제출까지 API 1~7이 **안정적으로 동작하는 것**이다. 아래 규칙(응답 형식, 예외, 레이어 방향, 테스트 순서)은 지키되, 그 이상은 만들지 않는다.
+목표는 11/14 제출까지 API 1~8이 **안정적으로 동작하는 것**이다. 아래 규칙(응답 형식, 예외, 레이어 방향, 테스트 순서)은 지키되, 그 이상은 만들지 않는다.
 
 - 지금 명세에 필요한 코드만 쓴다. "나중에 쓸 수도 있는" 확장 지점, 설정, 옵션을 미리 만들지 않는다
 - 구현체가 하나뿐인 인터페이스, 추상 클래스, 제네릭 유틸, 빌더·팩토리를 만들지 않는다. 서비스는 클래스 하나로 충분하다 (Spring Data repository 인터페이스는 예외)
@@ -24,7 +24,7 @@ RULES_VERSION: R10  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 
 
 | 문서 | 내용 |
 | --- | --- |
-| `docs/api-spec.md` | API 1~7 명세 (요청 파라미터, 응답 `data` 구조, 데이터 매핑). 8번(AI 추천 다시 생성)은 이번 범위 아님 |
+| `docs/api-spec.md` | API 1~8 명세 (요청 파라미터, 응답 `data` 구조, 데이터 매핑). 8번은 yong_ml FastAPI ML 실행 요청·상태 조회 (decisions D17) |
 | `docs/data-mapping.md` | `yongin` DB 테이블·컬럼, 조회 조건 규칙, 값 형식 |
 | `docs/decisions.md` | 이미 정한 설계 결정과 이유. 여기 적힌 결정은 다시 묻지 않고 따른다 |
 | `WORKLOG.md` | 작업 기록. 7장 규칙대로 매 작업마다 갱신 |
@@ -36,6 +36,7 @@ RULES_VERSION: R10  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 
 - Java 21, Spring Boot 4.1.2, Gradle 9.8.2 (실제 버전은 build.gradle 기준)
 - DB: MariaDB `yongin` (Python이 적재, Spring은 **읽기 전용**). INSERT/UPDATE/DELETE 쿼리를 쓰지 않는다
 - 앱은 `yongin`에 바로 접속한다. 앱 계정은 `yongin`에 `SELECT`만 가진다 (`yongin_app`은 쓰지 않음, decisions D15). 계정·DB 생성은 root로 한다
+- ML 컨테이너(yong_ml)는 별도 계정을 쓴다 (`ml_` 테이블 5개만 쓰기, decisions D15). Spring은 여전히 쓰기 쿼리를 쓰지 않고, ML 실행은 FastAPI 호출로만 한다 (decisions D17)
 - `.env`의 값은 사용자가 직접 적고, Claude는 이 파일을 읽지 않는다
 - DB 접근: **Spring Data JPA, 읽기 전용 엔티티** (decisions D1). 엔티티는 `@Table(catalog = "yongin", name = "...")`로 DB를 지정한다. MariaDB Dialect는 `catalog`만 한정자로 지원하므로 `schema`를 쓰지 않는다
 - `spring.jpa.hibernate.ddl-auto=none` 고정. `yongin` 스키마를 Hibernate가 만들거나 검사하지 않게 한다 (`update`, `create`, `validate` 금지)
@@ -60,11 +61,13 @@ RULES_VERSION: R10  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 
 │  ├─ controller / service / dto
 ├─ region         API 3, 4, 5, 6
 │  ├─ controller / service / dto
-└─ recommendation API 7
-   ├─ controller / service / dto
+├─ recommendation API 7
+│  ├─ controller / service / dto
+└─ ml             API 8 (yong_ml FastAPI 호출)
+   ├─ controller / service / dto / client (MlClient, RestClient)
 ```
 
-- 의존 방향: `controller → service → yongin.repository`. 거꾸로 부르거나 건너뛰지 않는다 (controller가 repository·entity 직접 사용 금지)
+- 의존 방향: `controller → service → yongin.repository`. 거꾸로 부르거나 건너뛰지 않는다 (controller가 repository·entity 직접 사용 금지). `ml`은 `controller → service → client` (controller가 client 직접 사용 금지)
 - 엔티티는 응답으로 내보내지 않는다. 서비스에서 `dto` record로 바꿔서 넘긴다
 - `dto`는 응답·요청 record만 둔다
 - 다른 기능 패키지의 service를 부를 수는 있다. 테이블 조회는 각 서비스가 `yongin.repository`를 직접 쓴다
@@ -96,6 +99,8 @@ RULES_VERSION: R10  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 
 | `RECOMMENDATION_NOT_FOUND` | 404 | `ml_explanation`에 그 지역 행이 없음 (없는 연도, 없는 지역 포함) |
 | `RESOURCE_NOT_FOUND` | 404 | 없는 경로 |
 | `METHOD_NOT_ALLOWED` | 405 | 지원하지 않는 HTTP 메서드 |
+| `ML_RUNNING` | 409 | ML 실행이 이미 돌고 있음 (API 8, FastAPI 409). 메시지 "이미 실행 중입니다." (decisions D17) |
+| `ML_UNAVAILABLE` | 502 | ML 서버 연결 실패·타임아웃, FastAPI 500 등 (API 8). 메시지 "ML 서버에 연결할 수 없습니다." (decisions D17) |
 | `INTERNAL_ERROR` | 500 | 그 밖의 예외. 메시지에 내부 정보(SQL, 스택)를 담지 않는다 |
 
 ## 5. 데이터 규칙 (요약, 자세한 것은 docs/data-mapping.md)
@@ -119,7 +124,8 @@ RULES_VERSION: R10  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 
 - month 있음 → 그 달 행만. month 없음(연간) → 숫자(점수·순위·개수)는 그 연도 월별 값의 평균, 분류·문장(유형, 신뢰도, 추천, 요약)은 그 테이블의 최근 달(그 year·unit의 가장 큰 month)
 - 점수는 정수로 반올림해 내리고(지도 포함), 순위는 그 정수 점수로 다시 매긴다. 동점은 같은 순위, 다음 순위는 건너뛴다 (1, 2, 3, 3, 5). DB `rank_total`, `is_vulnerable`은 쓰지 않는다. 취약지역 = 정수 점수 50점 이상
 - 월 검사는 `PeriodService.checkMonth` 하나로 한다 (API 1~5, 7). 월 범위를 하드코딩하지 않고 조회 시점에 테이블에 있는 달로 계산한다
-- 모든 응답은 `data` 맨 앞에 `period { year, months, type }`(`common.response.PeriodResponse`)를 내린다. type = `YEAR_ALL`(그 해 월별 값 전체 반영) / `YEAR_LATEST`(그 해 최근 달) / `MONTH`(고른 달), months는 항상 배열. API 3·4는 유형 기준으로 `typePeriod`를 하나 더 내린다. 고를 수 있는 연·월 목록은 응답에 넣지 않는다
+- API 1~7 응답은 `data` 맨 앞에 `period { year, months, type }`(`common.response.PeriodResponse`)를 내린다. type = `YEAR_ALL`(그 해 월별 값 전체 반영) / `YEAR_LATEST`(그 해 최근 달) / `MONTH`(고른 달), months는 항상 배열. API 3·4는 유형 기준으로 `typePeriod`를 하나 더 내린다. 고를 수 있는 연·월 목록은 응답에 넣지 않는다
+- API 8은 예외: `period` 없이 FastAPI RunStatus를 그대로 `data`에 담는다 (시각은 ISO 그대로, decisions D17)
 
 **조회 조건·값**
 - `ml_` 조회 조건: `year`, `unit`, `regionCd` + `month`
@@ -199,6 +205,8 @@ API 하나당 최소 아래 세 종류를 만든다.
 | 서비스 | 순수 단위 테스트 (Mockito) | 변환 규칙: ×100·반올림, '추천'/'제외' → `RECOMMENDED`/`EXCLUDED`, 연간/월 분기, 데이터 없을 때 예외 |
 | repository | `@DataJpaTest` + `@AutoConfigureTestDatabase(replace = NONE)` + Testcontainers MariaDB | 엔티티 매핑과 쿼리 메서드가 seed 데이터에서 기대값을 내는지 |
 
+- API 8은 repository 대신 client 테스트(`MockRestServiceServer`)로 FastAPI 응답(202·200·409·422·500, 연결 실패)이 우리 응답·에러로 바뀌는지 본다. 테스트에서 실제 FastAPI를 호출하지 않는다 (실행하면 `ml_` 덮어쓰기와 LLM 사용이 생김)
+
 - seed: `src/test/resources/db/seed-dong-2025.sql` (11/8 DB에서 행정동만 추린 것, 연간 NULL 행 포함). 공개 저장소라 git에 올리지 않는다 (decisions D11)
 - `@DataJpaTest` repository 테스트에는 `@Tag("db")`를 붙인다. CI는 `-PexcludeTags=db`로 이 태그를 빼고 돌고, 로컬 `./gradlew test`는 전부 돈다. CI가 repository 테스트를 대신 돌려주지 않으므로 PR 전에 로컬에서 전체 테스트를 통과시킨다
 - 컨테이너 DB 이름은 `yongin`으로 만든다 (`.withDatabaseName("yongin")`). 엔티티가 `catalog = "yongin"`, `@Subselect`가 `yongin.ml_priority`를 가리키기 때문
@@ -217,7 +225,7 @@ GitHub Actions `ci.yml`이 PR마다 아래를 돌리고, 하나라도 실패하�
 1. `spotlessCheck` — 포맷
 2. `test -PexcludeTags=db` — 단위·통합 테스트 (Testcontainers). seed가 필요한 `db` 태그 테스트는 제외 (decisions D11)
 3. ArchUnit 규칙 (test에 포함)
-   - controller → service → repository 방향만 허용 (controller는 `yongin` 패키지에 의존 금지)
+   - controller → service → repository 방향만 허용 (controller는 `yongin` 패키지에 의존 금지). `ml.client`는 service에서만 사용 (controller 의존 금지)
    - `@RestController`의 public 메서드 반환 타입은 `ApiResponse`
    - `@Entity` 클래스는 `yongin.entity` 패키지에만 있고, `@Immutable`이 붙어 있어야 함
    - `yongin.repository`의 인터페이스는 `JpaRepository`·`CrudRepository`를 상속하지 않음
@@ -252,3 +260,4 @@ GitHub Actions `ci.yml`이 PR마다 아래를 돌리고, 하나라도 실패하�
 | 2026-11-06 | R8 | API 7 `options` `score` 정수 반올림, 없는 연도와 지역도 `RECOMMENDATION_NOT_FOUND` | 사용자 결정, decisions D12 |
 | 2026-11-07 | R9 | 앱은 `yongin`에 SELECT 전용 계정 하나로 접속, `yongin_app` 제거 | 사용자 결정 (배포 준비 중 `yongin_app`을 쓰는 엔티티·테이블이 없음을 확인), decisions D15 |
 | 2026-11-08 | R10 | 연간 = 서버 재계산(숫자 월 평균, 분류·문장 최근 달), NULL 행 미사용(`@SQLRestriction`), 정수 점수·재계산 순위, `SUITABILITY_NOT_READY`, 공통 `period`, seed 11/8 기준, 확인 SQL 반올림 | 사용자 결정 (11/8 DB에 테이블마다 다른 월별 행 추가), decisions D4·D7·D12 변경, D16 |
+| 2026-11-10 | R11 | API 8 범위 포함(ML 실행 요청·상태), `ml` 패키지·`client`, 에러코드 `ML_RUNNING`·`ML_UNAVAILABLE`, API 8 `period` 예외, ML 컨테이너 별도 계정, API 8 client 테스트 | 사용자 결정 (yong_ml FastAPI 연동), decisions D5·D15 변경, D17 |
