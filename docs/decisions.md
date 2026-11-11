@@ -100,12 +100,13 @@
 - 다시 볼 때: API 8(D5)에서 결과를 별도 테이블에 저장하기로 하면 쓰기용 DB·권한을 다시 정한다
 - 변경 (2026-11-10): 앱 계정은 그대로 SELECT 전용. ML 컨테이너용 계정을 따로 둔다: `yongin.*` SELECT + `ml_` 테이블 5개(`ml_priority`, `ml_suitability`, `ml_region`, `ml_explanation`, `ml_model_info`)에만 INSERT·DELETE·CREATE·DROP·ALTER (yong_ml `io_db.upsert`가 행 삭제·추가, 경우에 따라 테이블 교체·컬럼 추가를 함). 계정 값은 `.env`, 생성은 root / 이유: 앱의 읽기 전용은 유지하고 ML 쓰기는 `ml_`로만 제한 (D17)
 
-## D16. 연간은 DB 연간 행 대신 서버가 월별 행으로 계산
+## D16. 연간 = DB 연간 행 (`ml_` 테이블의 month NULL 행, 처음엔 서버가 월별 행으로 계산)
 - 상태: 확정 (2026-11-08)
 - 고름: `month IS NULL` 행은 쓰지 않는다. 연간 숫자(점수·순위·개수) = 월별 값 평균, 분류·문장(유형, 신뢰도, 추천, 요약) = 그 테이블의 최근 달. 점수는 정수, 순위는 정수 점수로 재계산, 취약지역 = 정수 50점 이상. 응답은 7개 API 공통 `period { year, months, type(YEAR_ALL / YEAR_LATEST / MONTH) }`, API 3·4는 `typePeriod` 추가. 고를 수 있는 연·월 목록은 응답에서 뺀다 / 고르지 않음: DB 연간 NULL 행 사용, 테이블마다 다른 연간 규칙, 기준 필드(`scoreBasis` 등)를 값마다 따로 내리기, `availableMonths`를 응답에 유지
 - 이유: 11/8 DB에서 `ml_priority`·`ml_suitability`는 1~12월 + NULL 행, `ml_region`·`ml_explanation`·`ml_model_info`는 1~7월만(NULL 행 없음)이라 테이블마다 연간 행 유무와 월 범위가 달랐다. 한 규칙으로 통일하고, 월 범위는 조회 시점에 계산해 데이터가 들어오면 코드 수정 없이 반영된다. 기준 필드는 프론트가 쓸 데가 적어 연·월·종류만 남겼고, 선택 목록은 프론트가 가진다
 - 세부: API 5 연간 지역 값은 `feat_region`(연간 전용 테이블, 택시 성사율이 월별 건수 가중 평균과 일치)을 그대로 쓴다. API 7 options 점수는 같은 달 `ml_suitability`와 861건 일치해 엔티티를 추가하지 않고 options 값을 쓴다
 - 다시 볼 때: 프론트가 고를 수 있는 달을 알아야 하면 공통 달 목록을 응답에 다시 넣는다 (`PeriodService.availableMonths`는 남아 있음)
+- 변경 (2026-11-11): 연간 = 숫자는 월 평균·분류와 문장은 최근 달 → `ml_` 값은 모두 각 테이블의 month NULL 행(점수·유형·신뢰도·추천·요약·`updatedAt`). NULL 행은 `ml_` 엔티티 4개를 `@Subselect`(`coalesce(month, 0)`)로 바꿔 month 0으로 읽고, 서비스는 `month == null ? 0 : month`로 기존 조회 메서드를 쓴다. 월 평균·최근 달 계산은 제거하고 순위·취약지역은 정수 점수 기준 유지(D12). 연간 `period`·`typePeriod`는 모두 `YEAR_ALL` + 공통 달, `YEAR_LATEST`는 enum에만 남김(프론트 호환). `feat_`는 그대로 / 11/11 최종본 DB에서 `ml_` 5개 테이블 모두 1~12월 + NULL 행이 생겨 테이블마다 다르다는 이유가 사라졌고, NULL 행이 월 평균·12월과 달라(점수 30/38, `options` 38/38, `summary` 22/38, 유형 0/38) ML이 연간을 따로 계산한 값으로 판단. 연간 카드도 LLM으로 가장 나중(11/10 17:00)에 생성. 월별 엔티티로 NULL 행을 읽으면 Hibernate가 null 엔티티를 돌려줘(38/38 확인) NULL을 0으로 바꿔 읽음. 처음엔 연간 전용 엔티티 4개 + 상위 클래스 3개 + repository 4개로 나눴다가 코드가 많아 `@Subselect` 하나로 단순화. 사용자 결정
 
 ## D17. ML 실행(API 8)은 Spring이 yong_ml FastAPI를 부르기만 한다
 - 상태: 확정 (2026-11-10)

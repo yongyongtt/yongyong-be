@@ -45,7 +45,7 @@ class RegionControllerTest {
         .willReturn(
             new RegionPreviewResponse(
                 new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
-                new PeriodResponse(2025, List.of(7), PeriodResponse.Type.YEAR_LATEST),
+                new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
                 "4146125000",
                 "포곡읍",
                 "처인구",
@@ -76,8 +76,8 @@ class RegionControllerTest {
         .andExpect(jsonPath("$.data.period.months[1]").value(2))
         .andExpect(jsonPath("$.data.period.type").value("YEAR_ALL"))
         .andExpect(jsonPath("$.data.typePeriod.year").value(2025))
-        .andExpect(jsonPath("$.data.typePeriod.months[0]").value(7))
-        .andExpect(jsonPath("$.data.typePeriod.type").value("YEAR_LATEST"));
+        .andExpect(jsonPath("$.data.typePeriod.months[1]").value(2))
+        .andExpect(jsonPath("$.data.typePeriod.type").value("YEAR_ALL"));
   }
 
   @Test
@@ -87,7 +87,7 @@ class RegionControllerTest {
         .willReturn(
             new RegionPreviewResponse(
                 new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
-                new PeriodResponse(2025, List.of(7), PeriodResponse.Type.YEAR_LATEST),
+                new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
                 "4146125000",
                 "포곡읍",
                 "처인구",
@@ -115,11 +115,12 @@ class RegionControllerTest {
         .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
   }
 
-  @Test
-  @DisplayName("범위 밖 month가 오면 400 INVALID_REQUEST를 내린다")
-  void invalidMonth() throws Exception {
+  @ParameterizedTest
+  @ValueSource(strings = {"0", "13"})
+  @DisplayName("미리보기에 month가 1~12 밖이면(0은 서버 내부 연간 표현) 400 INVALID_REQUEST를 내린다")
+  void invalidMonth(String month) throws Exception {
     mockMvc
-        .perform(get(URL).param("year", "2025").param("month", "13"))
+        .perform(get(URL).param("year", "2025").param("month", month))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
   }
@@ -141,7 +142,7 @@ class RegionControllerTest {
         .willReturn(
             new RegionDetailResponse(
                 new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
-                new PeriodResponse(2025, List.of(7), PeriodResponse.Type.YEAR_LATEST),
+                new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
                 new RegionDetailResponse.Header("4146125000", "포곡읍", "처인구", 60, 7),
                 new RegionDetailResponse.Reliability(false, null),
                 new RegionDetailResponse.Type(
@@ -163,8 +164,8 @@ class RegionControllerTest {
         .andExpect(jsonPath("$.data.period.months[1]").value(2))
         .andExpect(jsonPath("$.data.period.type").value("YEAR_ALL"))
         .andExpect(jsonPath("$.data.typePeriod.year").value(2025))
-        .andExpect(jsonPath("$.data.typePeriod.months[0]").value(7))
-        .andExpect(jsonPath("$.data.typePeriod.type").value("YEAR_LATEST"))
+        .andExpect(jsonPath("$.data.typePeriod.months[1]").value(2))
+        .andExpect(jsonPath("$.data.typePeriod.type").value("YEAR_ALL"))
         .andExpect(jsonPath("$.data.reliability.low").value(false))
         .andExpect(jsonPath("$.data.reliability.note").value((Object) null))
         .andExpect(jsonPath("$.data.type.name").value("정류장 접근 취약형"))
@@ -201,11 +202,12 @@ class RegionControllerTest {
         .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
   }
 
-  @Test
-  @DisplayName("상세에 범위 밖 month가 오면 400 INVALID_REQUEST를 내린다")
-  void detailInvalidMonth() throws Exception {
+  @ParameterizedTest
+  @ValueSource(strings = {"0", "13"})
+  @DisplayName("상세에 month가 1~12 밖이면(0은 서버 내부 연간 표현) 400 INVALID_REQUEST를 내린다")
+  void detailInvalidMonth(String month) throws Exception {
     mockMvc
-        .perform(get(DETAIL_URL).param("year", "2025").param("month", "13"))
+        .perform(get(DETAIL_URL).param("year", "2025").param("month", month))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
   }
@@ -270,11 +272,12 @@ class RegionControllerTest {
         .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
   }
 
-  @Test
-  @DisplayName("비교에 범위 밖 month가 오면 400 INVALID_REQUEST를 내린다")
-  void comparisonInvalidMonth() throws Exception {
+  @ParameterizedTest
+  @ValueSource(strings = {"0", "13"})
+  @DisplayName("비교에 month가 1~12 밖이면(0은 서버 내부 연간 표현) 400 INVALID_REQUEST를 내린다")
+  void comparisonInvalidMonth(String month) throws Exception {
     mockMvc
-        .perform(get(COMPARISON_URL).param("year", "2025").param("month", "13"))
+        .perform(get(COMPARISON_URL).param("year", "2025").param("month", month))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
   }

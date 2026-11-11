@@ -26,17 +26,18 @@ class RegionRepositoryTest extends MariaDbTestSupport {
   @Autowired private MlExplanationRepository mlExplanationRepository;
 
   @Test
-  @DisplayName("ml_region과 ml_explanation의 월 목록은 1~7월이다")
+  @DisplayName("ml_region과 ml_explanation의 월 목록은 1~12월이고 연간 행(month 0)이 섞이지 않는다")
   void months() {
-    // SELECT DISTINCT month FROM ml_region / ml_explanation WHERE year=2025 AND unit='dong'; -- 1~7
+    // SELECT DISTINCT month FROM ml_region / ml_explanation WHERE year=2025 AND unit='dong'; --
+    // NULL, 1~12
     assertThat(mlRegionRepository.findMonths(2025, "dong"))
-        .containsExactlyInAnyOrder(1, 2, 3, 4, 5, 6, 7);
+        .containsExactlyInAnyOrder(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
     assertThat(mlExplanationRepository.findMonths(2025, "dong"))
-        .containsExactlyInAnyOrder(1, 2, 3, 4, 5, 6, 7);
+        .containsExactlyInAnyOrder(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
   }
 
   @Test
-  @DisplayName("ml_region을 월 키로 1건 조회하고 칩 JSON과 신뢰도를 매핑한다, 없는 달은 비어 있다")
+  @DisplayName("ml_region을 월 키로 1건 조회하고 칩 JSON과 신뢰도를 매핑한다, 없는 연도는 비어 있다")
   void regionByMonth() {
     // SELECT type_nm, type_desc, type_chips, low_reliability, reliability_note FROM ml_region
     //   WHERE year=2025 AND month=7 AND unit='dong' AND region_cd='4146125000';
@@ -52,7 +53,7 @@ class RegionRepositoryTest extends MariaDbTestSupport {
         .containsExactly("정류장까지 도보 김 · 12분 (평균 7분)", "정류장 500m 안 면적 좁음 · 54% (평균 77%)");
     assertThat(region.getLowReliability()).isFalse();
     assertThat(region.getReliabilityNote()).isNull();
-    assertThat(mlRegionRepository.findByYearAndMonthAndUnitAndRegionCd(2025, 8, "dong", POGOK))
+    assertThat(mlRegionRepository.findByYearAndMonthAndUnitAndRegionCd(2024, 7, "dong", POGOK))
         .isEmpty();
   }
 
@@ -87,7 +88,7 @@ class RegionRepositoryTest extends MariaDbTestSupport {
         .extracting(OptionJson::mode, OptionJson::status, OptionJson::score)
         .containsExactly(
             tuple("DRT", "추천", 80.5), tuple("BUS", "제외", 45.8), tuple("HAPPY_TAXI", "제외", 27.5));
-    assertThat(mlExplanationRepository.findByYearAndMonthAndUnitAndRegionCd(2025, 8, "dong", POGOK))
+    assertThat(mlExplanationRepository.findByYearAndMonthAndUnitAndRegionCd(2024, 7, "dong", POGOK))
         .isEmpty();
   }
 
@@ -105,5 +106,57 @@ class RegionRepositoryTest extends MariaDbTestSupport {
     assertThat(explanation.getIsKeep()).isTrue();
     assertThat(explanation.getOptions().getFirst().mode()).isEqualTo("KEEP");
     assertThat(explanation.getOptions().getFirst().score()).isNull();
+  }
+
+  @Test
+  @DisplayName("연간 ml_region을 month 0(DB NULL) 키로 1건 조회하고, 같은 유형 지역 6곳도 연간 행으로 조회한다")
+  void regionYear() {
+    // SELECT type_nm, type_chips, low_reliability FROM ml_region WHERE year=2025 AND unit='dong'
+    //   AND month IS NULL AND region_cd='4146125000';
+    // SELECT region_cd FROM ml_region WHERE year=2025 AND unit='dong' AND month IS NULL
+    //   AND type_nm='정류장 접근 취약형'; -- 6곳
+    MlRegion region =
+        mlRegionRepository
+            .findByYearAndMonthAndUnitAndRegionCd(2025, 0, "dong", POGOK)
+            .orElseThrow();
+
+    assertThat(region.getTypeNm()).isEqualTo("정류장 접근 취약형");
+    assertThat(region.getTypeChips()).hasSize(2);
+    assertThat(region.getLowReliability()).isFalse();
+    assertThat(mlRegionRepository.findByYearAndMonthAndUnitAndTypeNm(2025, 0, "dong", "정류장 접근 취약형"))
+        .doesNotContainNull()
+        .extracting(MlRegion::getRegionCd)
+        .containsExactlyInAnyOrder(
+            "4146125000", "4146125300", "4146125600", "4146353500", "4146553000", "4146556000");
+    assertThat(mlRegionRepository.findByYearAndMonthAndUnitAndRegionCd(2024, 0, "dong", POGOK))
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName("연간 ml_explanation을 month 0(DB NULL) 키로 조회하면 그 달 값이 아닌 연간 문장·점수·생성 시각이다")
+  void explanationYear() {
+    // SELECT is_keep, summary, created_at, JSON_EXTRACT(options,'$[*].score'), JSON_LENGTH(reasons)
+    //   FROM ml_explanation WHERE year=2025 AND unit='dong' AND month IS NULL AND
+    // region_cd='4146125000';
+    //   -- 0, '정류장까지 멀고 고령 인구가 많아 똑버스 도입 검토', 2026-11-10 17:00, [80.7, 46.8, 23.0], 3
+    // ... AND region_cd='4146151000'; -- is_keep 1, options[0] KEEP
+    MlExplanation explanation =
+        mlExplanationRepository
+            .findByYearAndMonthAndUnitAndRegionCd(2025, 0, "dong", POGOK)
+            .orElseThrow();
+
+    assertThat(explanation.getIsKeep()).isFalse();
+    assertThat(explanation.getSummary()).isEqualTo("정류장까지 멀고 고령 인구가 많아 똑버스 도입 검토");
+    assertThat(explanation.getCreatedAt()).isEqualTo("2026-11-10 17:00");
+    assertThat(explanation.getReasons()).hasSize(3);
+    assertThat(explanation.getOptions())
+        .extracting(OptionJson::mode, OptionJson::score)
+        .containsExactly(tuple("DRT", 80.7), tuple("BUS", 46.8), tuple("HAPPY_TAXI", 23.0));
+    MlExplanation keep =
+        mlExplanationRepository
+            .findByYearAndMonthAndUnitAndRegionCd(2025, 0, "dong", KEEP_REGION)
+            .orElseThrow();
+    assertThat(keep.getIsKeep()).isTrue();
+    assertThat(keep.getOptions().getFirst().mode()).isEqualTo("KEEP");
   }
 }

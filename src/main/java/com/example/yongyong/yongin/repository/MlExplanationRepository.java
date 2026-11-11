@@ -11,6 +11,9 @@ public interface MlExplanationRepository extends Repository<MlExplanation, MlExp
   Optional<MlExplanation> findByYearAndMonthAndUnitAndRegionCd(
       Integer year, Integer month, String unit, String regionCd);
 
-  @Query("select distinct e.month from MlExplanation e where e.year = :year and e.unit = :unit")
+  // 월별 달만 (연간 행 month 0 제외)
+  @Query(
+      "select distinct e.month from MlExplanation e"
+          + " where e.year = :year and e.unit = :unit and e.month <> 0")
   List<Integer> findMonths(Integer year, String unit);
 }

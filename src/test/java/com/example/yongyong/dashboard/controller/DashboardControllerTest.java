@@ -91,11 +91,12 @@ class DashboardControllerTest {
         .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
   }
 
-  @Test
-  @DisplayName("지도에 범위 밖 month가 오면 400 INVALID_REQUEST를 내린다")
-  void mapInvalidMonth() throws Exception {
+  @ParameterizedTest
+  @ValueSource(strings = {"0", "13"})
+  @DisplayName("지도에 month가 1~12 밖이면(0은 서버 내부 연간 표현) 400 INVALID_REQUEST를 내린다")
+  void mapInvalidMonth(String month) throws Exception {
     mockMvc
-        .perform(get("/api/dashboard/map").param("year", "2025").param("month", "13"))
+        .perform(get("/api/dashboard/map").param("year", "2025").param("month", month))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
   }

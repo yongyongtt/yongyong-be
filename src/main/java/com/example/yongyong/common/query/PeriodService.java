@@ -45,12 +45,4 @@ public class PeriodService {
       throw new BusinessException(ErrorCode.SUITABILITY_NOT_READY);
     }
   }
-
-  // month를 골랐으면 그 달, 아니면 months 중 가장 큰 달 (없으면 null)
-  public static Integer monthOrLatest(PeriodQuery query, List<Integer> months) {
-    if (query.month() != null) {
-      return query.month();
-    }
-    return months.stream().max(Integer::compare).orElse(null);
-  }
 }

@@ -6,16 +6,17 @@ import com.example.yongyong.common.converter.StringListConverter;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.IdClass;
-import jakarta.persistence.Table;
 import java.util.List;
 import lombok.Getter;
 import org.hibernate.annotations.Immutable;
-import org.hibernate.annotations.SQLRestriction;
+import org.hibernate.annotations.Subselect;
 
+// 연간(month NULL) 행은 month 0으로 읽는다 (MlPriority와 같은 이유, decisions D16)
 @Entity
 @Immutable
-@Table(catalog = "yongin", name = "ml_explanation")
-@SQLRestriction("month is not null")
+@Subselect(
+    "select year, coalesce(month, 0) as month, unit, region_cd, is_keep, options, reasons,"
+        + " cautions, summary, created_at from yongin.ml_explanation")
 @IdClass(MlExplanation.Id.class)
 @Getter
 public class MlExplanation {
