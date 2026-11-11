@@ -114,6 +114,7 @@ RULES_VERSION: R12  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 
 **`ml_` 엔티티의 month (연간 = month 0)**
 - `MlPriority`, `MlRegion`, `MlExplanation`, `MlModelInfo`는 `@Table` 대신 `@Subselect("select ..., coalesce(month, 0) as month, ... from yongin.ml_...")`로 매핑하고 키에 `month`를 넣는다. DB의 연간(month NULL) 행은 month 0으로 읽는다. 복합 키 일부가 NULL이면 Hibernate가 null 엔티티를 돌려주기 때문이다 (38행 모두 null 확인, decisions D16)
 - 서비스는 `PeriodQuery.monthKey()`(월이 없으면 0)로 기존 조회 메서드를 그대로 쓴다. 공통 달 계산(`findMonths`)은 0을 뺀다
+- month 0은 서버 내부 표현이다. API 입력으로는 받지 않는다: 요청 검증은 `@Min(1) @Max(12)` 그대로, `month=0`은 400 `INVALID_REQUEST`, month 없음이 연간이다. 응답의 `period.months`에도 0을 내리지 않는다
 - 컬럼을 SQL에 나열하므로 쓰는 컬럼을 추가하면 `@Subselect` 문자열도 고친다
 
 **조회 규칙**

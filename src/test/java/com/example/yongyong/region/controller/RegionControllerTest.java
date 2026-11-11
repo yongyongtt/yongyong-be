@@ -115,11 +115,12 @@ class RegionControllerTest {
         .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
   }
 
-  @Test
-  @DisplayName("범위 밖 month가 오면 400 INVALID_REQUEST를 내린다")
-  void invalidMonth() throws Exception {
+  @ParameterizedTest
+  @ValueSource(strings = {"0", "13"})
+  @DisplayName("미리보기에 month가 1~12 밖이면(0은 서버 내부 연간 표현) 400 INVALID_REQUEST를 내린다")
+  void invalidMonth(String month) throws Exception {
     mockMvc
-        .perform(get(URL).param("year", "2025").param("month", "13"))
+        .perform(get(URL).param("year", "2025").param("month", month))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
   }
@@ -201,11 +202,12 @@ class RegionControllerTest {
         .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
   }
 
-  @Test
-  @DisplayName("상세에 범위 밖 month가 오면 400 INVALID_REQUEST를 내린다")
-  void detailInvalidMonth() throws Exception {
+  @ParameterizedTest
+  @ValueSource(strings = {"0", "13"})
+  @DisplayName("상세에 month가 1~12 밖이면(0은 서버 내부 연간 표현) 400 INVALID_REQUEST를 내린다")
+  void detailInvalidMonth(String month) throws Exception {
     mockMvc
-        .perform(get(DETAIL_URL).param("year", "2025").param("month", "13"))
+        .perform(get(DETAIL_URL).param("year", "2025").param("month", month))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
   }
@@ -270,11 +272,12 @@ class RegionControllerTest {
         .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
   }
 
-  @Test
-  @DisplayName("비교에 범위 밖 month가 오면 400 INVALID_REQUEST를 내린다")
-  void comparisonInvalidMonth() throws Exception {
+  @ParameterizedTest
+  @ValueSource(strings = {"0", "13"})
+  @DisplayName("비교에 month가 1~12 밖이면(0은 서버 내부 연간 표현) 400 INVALID_REQUEST를 내린다")
+  void comparisonInvalidMonth(String month) throws Exception {
     mockMvc
-        .perform(get(COMPARISON_URL).param("year", "2025").param("month", "13"))
+        .perform(get(COMPARISON_URL).param("year", "2025").param("month", month))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
   }
