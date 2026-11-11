@@ -4,6 +4,7 @@
 2026-11-08: 11/8 DB 월별 행 반영으로 연간 정의, 공통 `period`(availableYears·availableMonths 삭제, API 1 `updatedAt`은 `data` 바로 아래로), API 7 `month`, `SUITABILITY_NOT_READY` 추가 (decisions D16). 노션에도 반영 필요.
 8번 `POST /api/regions/{regionCode}/recommendation/regenerate`(AI 추천 다시 생성, 내부용)는 저장 위치 미정이라 이번 범위에서 **제외**한다.
 2026-11-10: 8번 가안을 폐기하고 yong_ml FastAPI(`api.py`) 기준 ML 실행 요청·상태 조회 2개로 다시 정함 (decisions D5, D17). 노션에도 반영 필요.
+2026-11-11: 최종본 DB 반영으로 연간 = `ml_` 테이블의 연간(month NULL) 행, 연간 `period`·`typePeriod`는 모두 `YEAR_ALL` (decisions D16 변경). 노션에도 반영 필요.
 
 ## 공통
 
@@ -14,19 +15,18 @@
 | 이름 | 필수 | 값 | 설명 |
 | --- | --- | --- | --- |
 | `year` | O | 2025 | 기준 연도 |
-| `month` | X | 1~12 | 없으면 연간(전체). 아래 "연간·월 규칙"대로 서버가 월별 행으로 계산한다. 받는 API만 해당 |
+| `month` | X | 1~12 | 없으면 연간(전체). 아래 "연간·월 규칙"대로 `ml_` 연간(NULL) 행을 읽는다. 받는 API만 해당 |
 
 - `unit` 파라미터는 없다. 서버가 항상 `unit = 'dong'`으로 조회한다 (decisions D6)
 
 ### 연간·월 규칙 (decisions D16)
 
-- DB의 `month IS NULL`(연간) 행은 있든 없든 **쓰지 않는다**. 모든 `ml_` 조회는 `month IS NOT NULL` 행만 읽는다
 - `month` 있음 → 그 달 행만 (`month = :month`)
-- `month` 없음(연간)
-  - 숫자(점수·순위·개수) → 그 연도의 월별 값으로 재계산. 점수 = 지역별 월 평균 `score_total`
-  - 분류·문장(유형, 신뢰도, 추천 수단, 요약, AI 추천) → 그 테이블의 **최근 달**(그 `year`·`unit`에 행이 있는 가장 큰 month)
+- `month` 없음(연간) → `ml_` 값(점수, 유형, 신뢰도, 추천 수단, 요약, AI 추천, 갱신 시각)은 모두 그 테이블의 **연간 행**(`month IS NULL`). ML이 연간을 따로 계산해 둔 값이라 월 평균이나 12월 값과 다르다
+- 월을 고른 조회에는 연간 행이 섞이지 않고, 연간 조회에는 월별 행이 섞이지 않는다
+- `feat_`(API 5, 6)는 이 규칙과 무관하다 (연간 전용 테이블 `feat_region`·`feat_city`, 5번 참고)
 - 점수는 정수로 반올림해 내리고, 순위는 그 정수 점수로 다시 매긴다. 동점은 같은 순위, 다음 순위는 건너뛴다 (1, 2, 3, 3, 5). 월을 고른 경우도 DB `rank_total` 대신 재계산 순위를 쓴다
-- 정렬: 순위 → 같은 순위면 반올림 전 점수(연간은 월 평균) 높은 순 → `region_cd` (decisions D12). 예: 연간 원삼면 66.01이 이동읍 65.83보다 먼저, 둘 다 1위
+- 정렬: 순위 → 같은 순위면 반올림 전 점수 높은 순 → `region_cd` (decisions D12). 예: 연간 포곡읍 60.3이 동부동 59.5보다 먼저, 둘 다 7위
 - 취약지역 = 정수 점수 50점 이상 (DB `is_vulnerable` 대신)
 - 고를 수 있는 달(공통 달) = `ml_priority`·`ml_region`·`ml_explanation`에 공통으로 있는 달. 월 범위는 하드코딩하지 않고 조회 시점에 계산한다 (응답에는 내리지 않음)
 - `month`를 골랐는데 공통 달에 없으면 **404 `SUITABILITY_NOT_READY`** (API 1~5, 7 공통, 한 메서드로 판단). 연간 조회는 이 규칙과 무관
@@ -42,12 +42,12 @@
 
 | type | 뜻 | months |
 | --- | --- | --- |
-| `YEAR_ALL` | 연간 조회, 그 해 월별 값 전체를 반영 | 반영한 달 전부 |
-| `YEAR_LATEST` | 연간 조회, 그 해 최근 달 값 | `[최근 달]` (최근 달이 없으면 `[]`) |
+| `YEAR_ALL` | 연간 조회 (그 해 전체를 반영한 연간 행) | 공통 달 (API 5·6은 그 지역 `feat_region_month`의 달) |
 | `MONTH` | 월을 고른 조회 | `[고른 달]` |
 
 - `months`는 항상 배열이다
-- API 3·4는 점수와 유형의 기준이 달라 `period`(점수)와 `typePeriod`(유형·신뢰도·같은 유형 지역, API 3은 추천·요약도) 두 개를 내린다
+- `YEAR_LATEST`(연간 조회의 최근 달 값)는 2026-11-11부터 내리지 않는다. 프론트가 분기를 남겨 둬도 된다
+- API 3·4는 `period`(점수)와 `typePeriod`(유형·신뢰도·같은 유형 지역, API 3은 추천·요약도) 두 개를 내린다. 지금은 둘이 항상 같은 값이다 (프론트 호환으로 유지)
 - 고를 수 있는 연·월 목록(`availableYears`, `availableMonths`)은 응답에 없다. 프론트가 선택값을 가진다
 
 ### 에러
@@ -87,11 +87,11 @@ Query: `year`, `month`
 ```json
 {
   "period": { "year": 2025, "months": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "type": "YEAR_ALL" },
-  "updatedAt": "2026-11-08 20:55",
+  "updatedAt": "2026-11-10 17:00",
   "summary": {
     "regionCount": 38,
     "vulnerableCount": 9,
-    "avgScore": 38.3
+    "avgScore": 39.1
   },
   "top10": [
     {
@@ -99,10 +99,10 @@ Query: `year`, `month`
       "regionCode": "4146134000",
       "regionName": "원삼면",
       "gu": "처인구",
-      "score": 66
+      "score": 68
     },
     {
-      "rank": 1,
+      "rank": 2,
       "regionCode": "4146125600",
       "regionName": "이동읍",
       "gu": "처인구",
@@ -114,14 +114,14 @@ Query: `year`, `month`
 
 | 필드 | 출처 |
 | --- | --- |
-| period | 연간 `YEAR_ALL` + 평균에 쓴 `ml_priority` 달 / 월 `MONTH` + `[month]` |
-| updatedAt | 연간 `MAX(ml_model_info.trained_at) WHERE year = :year` / 월 `... AND month = :month`. 행이 없으면 null (decisions D12) |
+| period | 연간 `YEAR_ALL` + 공통 달 / 월 `MONTH` + `[month]` |
+| updatedAt | 연간 `MAX(ml_model_info.trained_at) WHERE year = :year AND month IS NULL` / 월 `... AND month = :month`. 행이 없으면 null (decisions D12) |
 | regionCount | 지역 수 |
 | vulnerableCount | 정수 점수 50점 이상인 지역 수 |
-| avgScore | 지역 점수(반올림 전, 연간은 지역별 월 평균)의 평균, 소수 첫째 자리 |
+| avgScore | 지역 점수(반올림 전)의 평균, 소수 첫째 자리 |
 | top10 | 위 "연간·월 규칙"의 정렬로 상위 10개 |
 
-공통 조건: `year = :year AND unit = 'dong' AND month IS NOT NULL` + 월 `month = :month`
+공통 조건: `year = :year AND unit = 'dong'` + 월 `month = :month` / 연간 `month IS NULL`
 에러: 연도 데이터가 없으면 `PERIOD_NOT_FOUND`, 공통 달에 없는 월이면 `SUITABILITY_NOT_READY`
 
 ---
@@ -140,7 +140,7 @@ Query: `year`, `month`
       "regionCode": "4146134000",
       "regionName": "원삼면",
       "gu": "처인구",
-      "score": 66,
+      "score": 68,
       "rank": 1
     }
   ]
@@ -150,7 +150,7 @@ Query: `year`, `month`
 | 필드 | 출처 |
 | --- | --- |
 | regionCode, regionName, gu | `ml_priority.region_cd`, `region_nm`, `gu` |
-| score | 종합 취약도 `score_total` (연간은 월 평균), 정수로 반올림 |
+| score | 종합 취약도 `score_total` (연간은 연간 행), 정수로 반올림 |
 | rank | 정수 점수로 재계산한 순위 |
 | period | 1번과 같다 |
 
@@ -164,14 +164,14 @@ Query: `year`, `month`
 
 ## 3. 지역 미리보기 — `GET /api/regions/{regionCode}/preview`
 
-지도·TOP10에서 지역을 고르면 나오는 우측 패널. 월을 고르면 점수·유형·추천이 모두 그 달 값, 연간이면 점수는 월 평균이고 유형·추천은 각 테이블의 최근 달 값.
+지도·TOP10에서 지역을 고르면 나오는 우측 패널. 월을 고르면 점수·유형·추천이 모두 그 달 값, 연간이면 모두 각 테이블의 연간 행 값.
 
 Query: `year`, `month`
 
 ```json
 {
   "period": { "year": 2025, "months": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "type": "YEAR_ALL" },
-  "typePeriod": { "year": 2025, "months": [7], "type": "YEAR_LATEST" },
+  "typePeriod": { "year": 2025, "months": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "type": "YEAR_ALL" },
   "regionCode": "4146125000",
   "regionName": "포곡읍",
   "gu": "처인구",
@@ -188,19 +188,19 @@ Query: `year`, `month`
       "name": "똑버스"
     }
   ],
-  "summary": "정류장까지 멀어 걷기 힘들어 똑버스 도입 검토"
+  "summary": "정류장까지 멀고 고령 인구가 많아 똑버스 도입 검토"
 }
 ```
 
 | 필드 | 출처 |
 | --- | --- |
 | regionName, gu, score, rank | 1번과 같은 정수 점수·재계산 순위 |
-| type | `ml_region.type_nm`, `type_desc` (월 또는 `ml_region` 최근 달 행) |
+| type | `ml_region.type_nm`, `type_desc` (그 달 또는 연간 행) |
 | recommended | `ml_explanation.options` 중 `status = '추천'`인 항목의 `mode`, `name` (1~2개, options 순서대로) |
 | isKeep | `ml_explanation.is_keep = 1`. 이때 recommended는 `{ "mode": "KEEP", "name": "현행 유지" }` 하나 |
 | summary | `ml_explanation.summary` |
 | period | 점수 기준. 1번과 같다 |
-| typePeriod | 유형·추천 기준. 연간 `YEAR_LATEST` + `[ml_region 최근 달]` / 월 `MONTH`. 추천·요약은 `ml_explanation` 최근 달 행을 쓴다 (11/8 DB는 두 테이블 최근 달이 같다) |
+| typePeriod | 유형·추천 기준. `period`와 같은 값 (연간 `YEAR_ALL` + 공통 달 / 월 `MONTH`). 추천·요약은 `ml_explanation`의 같은 기간 행 |
 
 - `ml_region`·`ml_explanation` 행이 없으면 `type`, `recommended`, `summary`는 null, `isKeep`은 false (404 아님)
 - 에러: 연도 데이터가 없으면 `PERIOD_NOT_FOUND`, 공통 달에 없는 월이면 `SUITABILITY_NOT_READY`, 없는 지역이면 `REGION_NOT_FOUND`
@@ -216,7 +216,7 @@ Query: `year`, `month`
 ```json
 {
   "period": { "year": 2025, "months": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "type": "YEAR_ALL" },
-  "typePeriod": { "year": 2025, "months": [7], "type": "YEAR_LATEST" },
+  "typePeriod": { "year": 2025, "months": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "type": "YEAR_ALL" },
   "header": {
     "regionCode": "4146125000",
     "regionName": "포곡읍",
@@ -247,11 +247,11 @@ Query: `year`, `month`
 
 | 필드 | 출처 | 기간 |
 | --- | --- | --- |
-| header | 1번과 같은 정수 점수·재계산 순위 | 월 / 월 평균 |
+| header | 1번과 같은 정수 점수·재계산 순위 | 월 / 연간 행 |
 | period, typePeriod | 3번과 같다 | — |
 | type.name, desc | `ml_region.type_nm`, `type_desc` | `typePeriod` |
 | type.chips | `ml_region.type_chips` (JSON 문자열 배열, 그대로) | `typePeriod` |
-| sameTypeRegions | `ml_region`에서 같은 `year`, `typePeriod` 달, `type_nm`인 지역, 자기 자신 제외·중복 없음 (`unit = 'dong'`). 이름은 `ml_priority`. 정렬: 1번과 같다 | `typePeriod` |
+| sameTypeRegions | `ml_region`에서 같은 `year`, 같은 기간(그 달 또는 연간 행), `type_nm`인 지역, 자기 자신 제외·중복 없음 (`unit = 'dong'`). 이름은 `ml_priority`. 정렬: 1번과 같다 | `typePeriod` |
 | reliability | `ml_region.low_reliability`(1 → true), `reliability_note` | `typePeriod` |
 
 - (i) 유형 안내 모달 6종은 프론트 고정 문구 → 응답에 없음
@@ -368,15 +368,15 @@ Query: `year` (month 없음)
 
 ## 7. AI 추천 해결방안 — `GET /api/regions/{regionCode}/recommendation`
 
-'AI 추천 해결방안' 전체. 월을 고르면 그 달 추천, 연간이면 `ml_explanation`의 최근 달 추천.
+'AI 추천 해결방안' 전체. 월을 고르면 그 달 추천, 연간이면 `ml_explanation`의 연간 행 추천.
 
 Query: `year`, `month`
 
 ```json
 {
-  "period": { "year": 2025, "months": [7], "type": "YEAR_LATEST" },
+  "period": { "year": 2025, "months": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "type": "YEAR_ALL" },
   "isKeep": false,
-  "createdAt": "2026-11-05 11:03",
+  "createdAt": "2026-11-10 17:00",
   "options": [
     {
       "mode": "DRT",
@@ -430,8 +430,8 @@ Query: `year`, `month`
 | isKeep | `ml_explanation.is_keep = 1` |
 | reasons, cautions | `ml_explanation.reasons`, `cautions` (JSON 배열 1~3개) |
 | createdAt | `ml_explanation.created_at` |
-| lowReliability | `ml_region.low_reliability = 1` (`period`와 같은 달 행) |
-| period | 연간 `YEAR_LATEST` + `[ml_explanation 최근 달]` / 월 `MONTH`. 위 모든 필드가 이 달 행 |
+| lowReliability | `ml_region.low_reliability = 1` (`period`와 같은 기간 행) |
+| period | 연간 `YEAR_ALL` + 공통 달 / 월 `MONTH`. 위 모든 필드가 이 기간 행 (연간은 연간 행) |
 
 options 변환 규칙
 

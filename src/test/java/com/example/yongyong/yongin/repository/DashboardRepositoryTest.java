@@ -33,23 +33,20 @@ class DashboardRepositoryTest extends MariaDbTestSupport {
   }
 
   @Test
-  @DisplayName("연도 전체 조회는 월별 행 456개만 읽고 NULL 행은 읽지 않는다")
+  @DisplayName("연간(DB month NULL) 행은 month 0으로 지역당 한 행씩 38개 읽고 컬럼을 매핑한다 (null 엔티티 없음)")
   void yearRows() {
-    // SELECT COUNT(*) FROM ml_priority WHERE year=2025 AND unit='dong' AND month IS NOT NULL; --
-    // 456
-    // SELECT AVG(score_total) FROM ml_priority WHERE year=2025 AND unit='dong'
-    //   AND month IS NOT NULL AND region_cd='4146125000'; -- 58.9583 (NULL 행은 60.3)
-    List<MlPriority> rows = mlPriorityRepository.findByYearAndUnit(2025, "dong");
+    // SELECT COUNT(*) FROM ml_priority WHERE year=2025 AND unit='dong' AND month IS NULL; -- 38
+    // SELECT region_nm, gu, score_total FROM ml_priority WHERE year=2025 AND unit='dong'
+    //   AND month IS NULL AND region_cd='4146125000'; -- 포곡읍, 처인구, 60.3 (월 평균은 58.96)
+    List<MlPriority> rows = mlPriorityRepository.findByYearAndMonthAndUnit(2025, 0, "dong");
 
-    assertThat(rows).hasSize(456);
-    assertThat(rows).extracting(MlPriority::getMonth).doesNotContainNull();
-    assertThat(
-            rows.stream()
-                .filter(row -> row.getRegionCd().equals(POGOK))
-                .mapToDouble(MlPriority::getScoreTotal)
-                .average()
-                .orElseThrow())
-        .isCloseTo(58.9583, within(0.0001));
+    assertThat(rows).hasSize(38).doesNotContainNull();
+    assertThat(rows).extracting(MlPriority::getRegionCd).doesNotHaveDuplicates();
+    MlPriority pogok =
+        rows.stream().filter(row -> row.getRegionCd().equals(POGOK)).findFirst().orElseThrow();
+    assertThat(pogok.getRegionNm()).isEqualTo("포곡읍");
+    assertThat(pogok.getGu()).isEqualTo("처인구");
+    assertThat(pogok.getScoreTotal()).isCloseTo(60.3, within(0.0001));
   }
 
   @Test
@@ -69,12 +66,15 @@ class DashboardRepositoryTest extends MariaDbTestSupport {
   }
 
   @Test
-  @DisplayName("최종 갱신 시각은 월이 없으면 연도 전체, 월이 있으면 그 달 최대값이고 없는 달은 null이다")
+  @DisplayName("최종 갱신 시각은 연간이면 month 0(DB NULL) 행, 월이면 그 달 최대값이고 행이 없으면 null이다")
   void latestTrainedAt() {
-    // SELECT MAX(trained_at) FROM ml_model_info WHERE year=2025; -- 2026-11-08 20:55
-    // ... AND month=2; -- 2026-11-07 14:49 / AND month=8; -- NULL
-    assertThat(mlModelInfoRepository.findLatestTrainedAt(2025, null)).isEqualTo("2026-11-08 20:55");
+    // SELECT MAX(trained_at) FROM ml_model_info WHERE year=2025 AND month IS NULL; -- 2026-11-10
+    // 17:00
+    // ... AND month=2; -- 2026-11-07 14:49 / AND month=12; -- 2026-11-10 10:49 / year=2024; -- NULL
+    assertThat(mlModelInfoRepository.findLatestTrainedAt(2025, 0)).isEqualTo("2026-11-10 17:00");
     assertThat(mlModelInfoRepository.findLatestTrainedAt(2025, 2)).isEqualTo("2026-11-07 14:49");
-    assertThat(mlModelInfoRepository.findLatestTrainedAt(2025, 8)).isNull();
+    assertThat(mlModelInfoRepository.findLatestTrainedAt(2025, 12)).isEqualTo("2026-11-10 10:49");
+    assertThat(mlModelInfoRepository.findLatestTrainedAt(2024, 0)).isNull();
+    assertThat(mlModelInfoRepository.findLatestTrainedAt(2024, 1)).isNull();
   }
 }

@@ -1,19 +1,19 @@
 # yongin DB 데이터 매핑 (API 1~7용)
 
-기준 DB: 2026-11-08 적재본 (MariaDB 12.2, 이전 기준 `yongin_2026-11-05.sql`). Python(ML 팀원)이 적재하고 Spring은 읽기만 한다.
-테스트용 seed: `src/test/resources/db/seed-dong-2025.sql` — 11/8 DB에서 아래 8개 테이블, 행정동(`unit = 'dong'`) 행만 (연간 NULL 행 포함, 섞이지 않는지 검증용). git에 올리지 않는다 (decisions D11).
+기준 DB: 2026-11-11 최종본 (MariaDB 12.2, 이전 기준 11/8 적재본, `yongin_2026-11-05.sql`). Python(ML 팀원)이 적재하고 Spring은 읽기만 한다.
+테스트용 seed: `src/test/resources/db/seed-dong-2025.sql` — 11/11 최종본에서 아래 8개 테이블, 2025년 행정동(`unit = 'dong'`) 행만 (연간 NULL 행 포함). `mariadb-dump --compact --skip-extended-insert --no-autocommit yongin <테이블> --where="year=2025 AND unit='dong'"`(`ml_model_info`·`feat_region*`·`feat_city_month`는 `year=2025`만)로 만들고 `/*!`·`/*M!` 줄을 뺀다. git에 올리지 않는다 (decisions D11).
 
-## 11/8 DB 테이블별 월 (2025, dong)
+## 11/11 최종본 테이블별 월 (2025, dong)
 
-| 테이블 | 월 | month NULL 행 | 비고 |
+| 테이블 | 월 | month NULL 행 (연간) | 비고 |
 | --- | --- | --- | --- |
-| `ml_priority` | 1~12 | 있음 (쓰지 않음) | 지역당 월 1행 |
-| `ml_suitability` | 1~12 | 있음 (쓰지 않음) | 엔티티 없음. `ml_explanation.options`의 `score`와 같은 달 값이 같다 (861건 일치) |
-| `ml_region`, `ml_explanation` | 1~7 | 없음 | 11/8에 `month` 컬럼 추가 |
-| `ml_model_info` | 1~7 | 없음 | 11/8에 `month` 컬럼 추가 |
-| `feat_region_month`, `feat_city_month` | 1~12 | 없음 | |
+| `ml_priority` | 1~12 | 38 (연간 값으로 씀) | 지역당 월 1행 + 연간 1행 |
+| `ml_suitability` | 1~12 | 114 | 엔티티 없음. `ml_explanation.options`의 `score`와 같은 기간 값 (11/8 861건 일치) |
+| `ml_region`, `ml_explanation` | 1~12 | 38 (연간 값으로 씀) | 11/8에는 1~7월, NULL 행 없음 |
+| `ml_model_info` | 1~12 | 3 (연간 값으로 씀) | 모델 3개 × 기간 |
+| `feat_region_month`, `feat_city_month` | 1~12 | 없음 | 연간은 `feat_region`·`feat_city` |
 
-월 범위는 코드에 하드코딩하지 않는다. 연간 계산과 고를 수 있는 달(공통 달, 404 판단용)은 조회 시점에 테이블에 있는 달로 정한다 (decisions D16, api-spec "연간·월 규칙").
+월 범위는 코드에 하드코딩하지 않는다. 고를 수 있는 달(공통 달, 404 판단용)은 조회 시점에 테이블에 있는 달로 정한다. 연간 `ml_` 값은 NULL 행을 그대로 쓴다 (decisions D16, api-spec "연간·월 규칙").
 
 ## 공통 사항
 
@@ -29,22 +29,22 @@
 
 | 엔티티 | 테이블 | `@IdClass` 키 | 비고 |
 | --- | --- | --- | --- |
-| `MlPriority` | `ml_priority` | year, month, unit, regionCd | `@SQLRestriction("month is not null")`. `rank_total`, `is_vulnerable`은 매핑하지 않음 (서버가 재계산) |
-| `MlRegion` | `ml_region` | year, month, unit, regionCd | `@SQLRestriction("month is not null")`. `typeChips` → `List<String>` (StringListConverter) |
-| `MlExplanation` | `ml_explanation` | year, month, unit, regionCd | `@SQLRestriction("month is not null")`. `options` → `List<OptionJson>` (OptionListConverter), `reasons`·`cautions` → `List<String>` |
-| `MlModelInfo` | `ml_model_info` | year, month, model | `@SQLRestriction("month is not null")`. `trainedAt`만 사용 |
+| `MlPriority` | `ml_priority` | year, month, unit, regionCd | `@Subselect`, 연간 = month 0. `rank_total`, `is_vulnerable`은 매핑하지 않음 (서버가 정수 점수로 계산) |
+| `MlRegion` | `ml_region` | year, month, unit, regionCd | `@Subselect`, 연간 = month 0. `typeChips` → `List<String>` (StringListConverter) |
+| `MlExplanation` | `ml_explanation` | year, month, unit, regionCd | `@Subselect`, 연간 = month 0. `options` → `List<OptionJson>` (OptionListConverter), `reasons`·`cautions` → `List<String>` |
+| `MlModelInfo` | `ml_model_info` | year, month, model | `@Subselect`, 연간 = month 0. `trainedAt`만 사용 |
 | `FeatRegion` | `feat_region` | year, dongCd | |
 | `FeatRegionMonth` | `feat_region_month` | year, month, dongCd | month는 1~12 (NULL 없음) |
 | `FeatCity` | `feat_city` | year, unit | |
 | `FeatCityMonth` | `feat_city_month` | year, month | |
 
-`MlPriority` 예시 (`ml_` 엔티티 4개 모두 같은 방식)
+`ml_` 테이블은 월별 행과 연간(month NULL) 행이 한 테이블에 있다. 복합 키 일부가 NULL이면 Hibernate가 null 엔티티를 돌려주므로(최종본 seed 38/38 확인) `@Subselect`에서 NULL을 0으로 바꿔 읽는다. 연간 = month 0 (decisions D16)
 
 ```java
 @Entity
 @Immutable
-@Table(catalog = "yongin", name = "ml_priority")
-@SQLRestriction("month is not null") // 연간 NULL 행은 어떤 조회에도 섞이지 않는다 (decisions D16)
+@Subselect("select year, coalesce(month, 0) as month, unit, region_cd, region_nm, gu, score_total"
+    + " from yongin.ml_priority")
 @IdClass(MlPriority.Id.class)
 public class MlPriority {
     public record Id(Integer year, Integer month, String unit, String regionCd) {}
@@ -52,14 +52,13 @@ public class MlPriority {
 }
 ```
 
-repository 예시 (조회 메서드만, `Repository<T, ID>` 상속). 월 평균, 순위, 개수는 서비스에서 계산한다 (decisions D13)
+repository 예시 (조회 메서드만, `Repository<T, ID>` 상속). 순위, 개수는 서비스에서 계산한다 (decisions D13). 서비스는 `PeriodQuery.monthKey()`(월이 없으면 0)를 넘긴다
 
 ```java
-List<MlPriority> findByYearAndUnit(Integer year, String unit);                  // 연간: 그 연도 월별 행 전부
-List<MlPriority> findByYearAndMonthAndUnit(Integer year, Integer month, String unit);
+List<MlPriority> findByYearAndMonthAndUnit(Integer year, Integer month, String unit);   // 연간은 month 0
 
-@Query("select distinct p.month from MlPriority p where p.year = :year and p.unit = :unit")
-List<Integer> findMonths(Integer year, String unit);                           // 공통 달·최근 달 계산용
+@Query("select distinct p.month from MlPriority p where p.year = :year and p.unit = :unit and p.month <> 0")
+List<Integer> findMonths(Integer year, String unit);                                    // 공통 달 계산용
 ```
 
 ## 조회 조건 규칙
@@ -68,9 +67,9 @@ API에 `unit` 파라미터는 없다. 아래 `unit` 조건에는 서비스가 �
 
 | 테이블 묶음 | 연도 | 연간 / 월 | 지역 단위 | 지역 키 |
 | --- | --- | --- | --- | --- |
-| `ml_priority` | `year` | 월 `month = ?` / 연간 = 그 연도 월별 행 평균 (NULL 행 제외) | `unit` | `region_cd` |
-| `ml_region`, `ml_explanation` | `year` | 월 `month = ?` / 연간 = 최근 달 | `unit` | `region_cd` |
-| `ml_model_info` | `year` | 월 `month = ?` / 연간 = 연도 전체 | — | — |
+| `ml_priority` | `year` | 월 `month = ?` / 연간 `month IS NULL` 행 (엔티티에서는 month 0) | `unit` | `region_cd` |
+| `ml_region`, `ml_explanation` | `year` | 월 `month = ?` / 연간 `month IS NULL` 행 | `unit` | `region_cd` |
+| `ml_model_info` | `year` | 월 `month = ?` / 연간 `month IS NULL` 행 | — | — |
 | `feat_region` | `year` | 연간 전용 테이블 | (행정동 전용) | `dong_cd` |
 | `feat_region_month` | `year` | `month` 1~12 (NULL 없음) | (행정동 전용) | `dong_cd` |
 | `feat_city` | `year` | 연간 전용 | `unit` | 없음 (시 전체) |
@@ -79,11 +78,11 @@ API에 `unit` 파라미터는 없다. 아래 `unit` 조건에는 서비스가 �
 ## 테이블별 사용 컬럼
 
 ### ml_priority — 점수·순위 (API 1~4)
-행정동: 연간 NULL 38행(쓰지 않음) + 월별 1~12월 × 38행
+행정동: 연간 NULL 38행(연간 값) + 월별 1~12월 × 38행
 
 | 컬럼 | 타입 | 설명 |
 | --- | --- | --- |
-| year, month | bigint | month NULL = 연간 (쓰지 않음) |
+| year, month | bigint | month NULL = 연간 |
 | unit | text | `dong` / `village` |
 | region_cd, region_nm, gu | text | 지역 코드·이름·구 |
 | score_total | double | 종합 취약도 0~100 |
@@ -137,7 +136,7 @@ options 항목 구조 (DB 원문 키)
 - `mode`: `BUS`, `DRT`, `HAPPY_TAXI`, `KEEP`(is_keep = 1일 때 맨 앞)
 
 ### ml_model_info — 최종 갱신일 (API 1)
-`year`, `month`, `trained_at`(text, `YYYY-MM-DD HH:mm`) → 연간 `MAX(trained_at)`, 월 `MAX(trained_at) WHERE month = ?`
+`year`, `month`, `trained_at`(text, `YYYY-MM-DD HH:mm`) → 연간 `MAX(trained_at) WHERE month IS NULL`, 월 `MAX(trained_at) WHERE month = ?`
 
 ### feat_region — 지역 연간 지표 (API 5)
 
@@ -165,20 +164,21 @@ options 항목 구조 (DB 원문 키)
 ### feat_city_month — 시 평균 월별 (API 5, 6)
 `year`, `month`, `taxi_req`, `taxi_matched`, `taxi_match_rate`, `taxi_unmatched_rate`, `fp_avg`
 
-## seed로 확인한 기준값 (11/8 DB, 2025, dong)
+## seed로 확인한 기준값 (11/11 최종본, 2025, dong)
 
 확인 SQL의 정수 반올림은 `FLOOR(x + 0.5)`로 쓴다. MariaDB `ROUND(double)`은 .5를 짝수 쪽으로 보내 (`ROUND(58.5e0)` = 58) 서버(Java `Math.round`, 58.5 → 59)와 다를 수 있다.
 
 | 항목 | 값 | 확인 SQL |
 | --- | --- | --- |
-| 연간 지역 수 / 취약지역 / 평균 | 38 / 9 / 38.3 | `WITH a AS (SELECT region_cd, AVG(score_total) av FROM ml_priority WHERE year=2025 AND unit='dong' AND month IS NOT NULL GROUP BY region_cd) SELECT COUNT(*), SUM(FLOOR(av+0.5)>=50), ROUND(AVG(av),1) FROM a` |
-| 연간 1위 | 이동읍(4146125600) 65.83→66, 원삼면(4146134000) 66.01→66 공동 1위 | 위 `a`에 `RANK() OVER (ORDER BY FLOOR(av+0.5) DESC)` |
-| 포곡읍(4146125000) | 연간 58.96→59, 7위 (NULL 행은 60.3) / 7월 60.1→60, 동부동(60.2)과 공동 7위 | 위와 같음, `month=7` |
+| 연간 지역 수 / 취약지역 / 평균 | 38 / 9 / 39.1 (11/8 월 평균 방식은 38.3) | `SELECT COUNT(*), SUM(FLOOR(score_total+0.5)>=50), ROUND(AVG(score_total),1) FROM ml_priority WHERE year=2025 AND unit='dong' AND month IS NULL` |
+| 연간 1·2위 | 원삼면(4146134000) 67.9→68 단독 1위, 이동읍(4146125600) 66.2→66 2위 | 위 조건에 `RANK() OVER (ORDER BY FLOOR(score_total+0.5) DESC)` |
+| 포곡읍(4146125000) | 연간 60.3→60, 동부동(59.5→60)과 공동 7위 / 7월 60.1→60, 동부동(60.2)과 공동 7위 | 위와 같음, 7월은 `month=7` |
+| 연간 NULL 행 vs 서버 계산 | 정수 점수 30/38 다름(최대 2.9점), `options` 38/38·`summary` 22/38 다름(12월 대비), 유형 0/38 | D16 변경 근거 |
 | 7월 취약지역 | 9 (DB `is_vulnerable`로는 8) | `SELECT SUM(FLOOR(score_total+0.5)>=50) FROM ml_priority WHERE year=2025 AND month=7 AND unit='dong'` |
-| 공통 달 (고를 수 있는 달) | 1~7 | `ml_priority`·`ml_region`·`ml_explanation`의 `DISTINCT month` 교집합 |
-| 최종 갱신 | 연간 2026-11-08 20:55 / 2월 2026-11-07 14:49 / 8월 없음 | `SELECT MAX(trained_at) FROM ml_model_info WHERE year=2025 [AND month=?]` |
-| 포곡읍 7월 추천 | 2026-11-08 20:56, options 점수 80.5, 45.8, 27.5 (= `ml_suitability` 7월) | `SELECT created_at, JSON_EXTRACT(options,'$[*].score') FROM ml_explanation WHERE month=7 AND region_cd='4146125000'` |
-| 같은 유형(7월, 정류장 접근 취약형) | 포곡읍 포함 6곳 | `SELECT region_cd FROM ml_region WHERE year=2025 AND month=7 AND type_nm='정류장 접근 취약형'` |
+| 공통 달 (고를 수 있는 달) | 1~12 | `ml_priority`·`ml_region`·`ml_explanation`의 `DISTINCT month` 교집합 |
+| 최종 갱신 | 연간 2026-11-10 17:00 / 2월 2026-11-07 14:49 / 12월 2026-11-10 10:49 | `SELECT MAX(trained_at) FROM ml_model_info WHERE year=2025 AND month IS NULL` (월은 `month=?`) |
+| 포곡읍 7월 / 연간 추천 | 7월 2026-11-08 20:56, options 점수 80.5, 45.8, 27.5 / 연간 2026-11-10 17:00, 80.7, 46.8, 23.0 | `SELECT month, created_at, JSON_EXTRACT(options,'$[*].score') FROM ml_explanation WHERE year=2025 AND unit='dong' AND region_cd='4146125000' AND (month=7 OR month IS NULL)` |
+| 같은 유형(정류장 접근 취약형) | 7월·연간 모두 포곡읍 포함 6곳. 연간은 이동읍, 모현읍, 포곡읍, 동천동, 보라동, 신봉동 (연간 점수 순) | `SELECT region_cd FROM ml_region WHERE year=2025 AND unit='dong' AND type_nm='정류장 접근 취약형' AND month IS NULL` (7월은 `month=7`) |
 | 시 평균 택시 성사율(연간) | 53.8% | `SELECT ROUND(SUM(taxi_matched)/SUM(taxi_req)*100,1) FROM feat_city_month WHERE year=2025` |
 | 시 평균 생활인구(연간) | 6,267 (11/5에는 5,938) | `SELECT ROUND(AVG(fp_avg)) FROM feat_city_month WHERE year=2025` |
 | 시 평균 정류장 / 고령 | 81.6 / 17.7% | `SELECT n_stops, elderly_ratio FROM feat_city WHERE year=2025 AND unit='dong'` |

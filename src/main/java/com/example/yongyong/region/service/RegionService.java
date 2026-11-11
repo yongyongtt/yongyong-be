@@ -6,7 +6,6 @@ import com.example.yongyong.common.exception.BusinessException;
 import com.example.yongyong.common.exception.ErrorCode;
 import com.example.yongyong.common.query.PeriodQuery;
 import com.example.yongyong.common.query.PeriodService;
-import com.example.yongyong.common.response.PeriodResponse;
 import com.example.yongyong.dashboard.service.DashboardService;
 import com.example.yongyong.dashboard.service.DashboardService.RegionScore;
 import com.example.yongyong.dashboard.service.DashboardService.Scores;
@@ -40,20 +39,14 @@ public class RegionService {
     periodService.checkMonth(query);
     Scores scores = dashboardService.scores(query);
     RegionScore score = findScore(scores, regionCode);
-    Integer typeMonth = typeMonth(query);
-    Integer recommendationMonth =
-        PeriodService.monthOrLatest(
-            query, mlExplanationRepository.findMonths(query.year(), UNIT_DONG));
-    Optional<MlRegion> region = findRegion(query.year(), typeMonth, regionCode);
+    Optional<MlRegion> region = findRegion(query, regionCode);
     Optional<MlExplanation> explanation =
-        recommendationMonth == null
-            ? Optional.empty()
-            : mlExplanationRepository.findByYearAndMonthAndUnitAndRegionCd(
-                query.year(), recommendationMonth, UNIT_DONG, regionCode);
+        mlExplanationRepository.findByYearAndMonthAndUnitAndRegionCd(
+            query.year(), query.monthKey(), UNIT_DONG, regionCode);
 
     return new RegionPreviewResponse(
         scores.period(query),
-        PeriodResponse.latest(query, typeMonth),
+        scores.period(query),
         score.regionCode(),
         score.regionName(),
         score.gu(),
@@ -71,12 +64,11 @@ public class RegionService {
     periodService.checkMonth(query);
     Scores scores = dashboardService.scores(query);
     RegionScore score = findScore(scores, regionCode);
-    Integer typeMonth = typeMonth(query);
-    Optional<MlRegion> region = findRegion(query.year(), typeMonth, regionCode);
+    Optional<MlRegion> region = findRegion(query, regionCode);
 
     return new RegionDetailResponse(
         scores.period(query),
-        PeriodResponse.latest(query, typeMonth),
+        scores.period(query),
         new RegionDetailResponse.Header(
             score.regionCode(), score.regionName(), score.gu(), score.score(), score.rank()),
         region
@@ -86,16 +78,9 @@ public class RegionService {
         region.map(r -> toType(r, query.year(), scores, regionCode)).orElse(null));
   }
 
-  private Integer typeMonth(PeriodQuery query) {
-    return PeriodService.monthOrLatest(
-        query, mlRegionRepository.findMonths(query.year(), UNIT_DONG));
-  }
-
-  private Optional<MlRegion> findRegion(Integer year, Integer month, String regionCode) {
-    return month == null
-        ? Optional.empty()
-        : mlRegionRepository.findByYearAndMonthAndUnitAndRegionCd(
-            year, month, UNIT_DONG, regionCode);
+  private Optional<MlRegion> findRegion(PeriodQuery query, String regionCode) {
+    return mlRegionRepository.findByYearAndMonthAndUnitAndRegionCd(
+        query.year(), query.monthKey(), UNIT_DONG, regionCode);
   }
 
   private RegionScore findScore(Scores scores, String regionCode) {

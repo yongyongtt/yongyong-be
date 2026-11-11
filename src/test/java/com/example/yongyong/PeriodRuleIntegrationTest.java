@@ -18,7 +18,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
 
-// 11/8 seed 기준. 기대값 SQL은 각 테스트 주석에
+// 11/11 최종본 seed 기준. 기대값 SQL은 각 테스트 주석에
 @Tag("db")
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -38,67 +38,71 @@ class PeriodRuleIntegrationTest extends MariaDbTestSupport {
         "/api/regions/" + POGOK + "/comparison",
         "/api/regions/" + POGOK + "/recommendation"
       })
-  @DisplayName("공통 달에 없는 8월은 404 SUITABILITY_NOT_READY, 7월과 연간은 200이다")
+  @DisplayName("공통 달(1~12)의 7월·12월과 연간은 200이다")
   void monthRule(String url) throws Exception {
-    // 공통 달 = ml_priority(1~12) ∩ ml_region(1~7) ∩ ml_explanation(1~7) = 1~7
-    mockMvc
-        .perform(get(url).param("year", "2025").param("month", "8"))
-        .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.error.code").value("SUITABILITY_NOT_READY"))
-        .andExpect(jsonPath("$.error.message").value("존재하지 않는 달입니다."));
+    // 공통 달 = ml_priority ∩ ml_region ∩ ml_explanation의 DISTINCT month = 1~12
+    // (공통 달에 없는 달은 seed에 없어 SUITABILITY_NOT_READY는 서비스 테스트에서 mock으로 본다)
     mockMvc.perform(get(url).param("year", "2025").param("month", "7")).andExpect(status().isOk());
+    mockMvc.perform(get(url).param("year", "2025").param("month", "12")).andExpect(status().isOk());
     mockMvc.perform(get(url).param("year", "2025")).andExpect(status().isOk());
   }
 
   @Test
-  @DisplayName("연간 대시보드는 월 평균 점수와 재계산 순위(동점 공동 1위)를 쓰고 period는 1~12월 YEAR_ALL이다")
+  @DisplayName("연간 대시보드는 연간(NULL) 행 점수와 재계산 순위를 쓰고, 갱신 시각도 연간 행, period는 1~12월 YEAR_ALL이다")
   void annualDashboard() throws Exception {
-    // 지역별 AVG(score_total) (month IS NOT NULL) → ROUND → RANK():
-    //   원삼면 66.01→66 1위, 이동읍 65.83→66 1위 (같은 순위는 반올림 전 점수 높은 순), 백암면 62.69·모현읍 62.58→63 3위
-    // 평균 50 이상 9곳, 지역 평균들의 평균 38.31, MAX(trained_at) 2026-11-08 20:55
+    // SELECT region_nm, score_total, RANK() OVER (ORDER BY FLOOR(score_total+0.5) DESC) FROM
+    // ml_priority
+    //   WHERE year=2025 AND unit='dong' AND month IS NULL;
+    //   -- 원삼면 67.9→68 1위, 이동읍 66.2→66 2위, 모현읍 64.7→65 3위, 백암면 63.9→64 4위, 양지면 61.7→62 5위
+    // SUM(FLOOR(score_total+0.5)>=50) 9, AVG(score_total) 39.06
+    // SELECT MAX(trained_at) FROM ml_model_info WHERE year=2025 AND month IS NULL; -- 2026-11-10
+    // 17:00
     mockMvc
         .perform(get("/api/dashboard").param("year", "2025"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.period.year").value(2025))
         .andExpect(jsonPath("$.data.period.months", hasSize(12)))
         .andExpect(jsonPath("$.data.period.type").value("YEAR_ALL"))
-        .andExpect(jsonPath("$.data.updatedAt").value("2026-11-08 20:55"))
+        .andExpect(jsonPath("$.data.updatedAt").value("2026-11-10 17:00"))
         .andExpect(jsonPath("$.data.summary.regionCount").value(38))
         .andExpect(jsonPath("$.data.summary.vulnerableCount").value(9))
-        .andExpect(jsonPath("$.data.summary.avgScore").value(38.3))
+        .andExpect(jsonPath("$.data.summary.avgScore").value(39.1))
         .andExpect(jsonPath("$.data.top10[0].regionName").value("원삼면"))
+        .andExpect(jsonPath("$.data.top10[0].score").value(68))
         .andExpect(jsonPath("$.data.top10[0].rank").value(1))
         .andExpect(jsonPath("$.data.top10[1].regionName").value("이동읍"))
-        .andExpect(jsonPath("$.data.top10[1].rank").value(1))
-        .andExpect(jsonPath("$.data.top10[2].regionName").value("백암면"))
+        .andExpect(jsonPath("$.data.top10[1].rank").value(2))
+        .andExpect(jsonPath("$.data.top10[2].regionName").value("모현읍"))
         .andExpect(jsonPath("$.data.top10[2].rank").value(3))
-        .andExpect(jsonPath("$.data.top10[3].regionName").value("모현읍"))
-        .andExpect(jsonPath("$.data.top10[3].rank").value(3))
+        .andExpect(jsonPath("$.data.top10[4].regionName").value("양지면"))
         .andExpect(jsonPath("$.data.top10[4].rank").value(5));
   }
 
   @Test
-  @DisplayName("연간 미리보기는 NULL 행(60.3)이 아닌 월 평균 59점·7위, 유형과 추천은 최근 달(7월)이다")
+  @DisplayName("연간 미리보기는 점수·유형·요약이 모두 연간 행이고 typePeriod도 1~12월 YEAR_ALL이다")
   void annualPreview() throws Exception {
-    // SELECT AVG(score_total) ... region_cd='4146125000' AND month IS NOT NULL; -- 58.96 → 59, 7위
-    // SELECT summary FROM ml_explanation WHERE month=7 AND region_cd='4146125000';
+    // SELECT score_total FROM ml_priority WHERE ... month IS NULL AND region_cd='4146125000'; --
+    // 60.3 → 60
+    //   동부동 59.5 → 60과 공동 7위
+    // SELECT summary FROM ml_explanation WHERE ... month IS NULL AND region_cd='4146125000';
     mockMvc
         .perform(get("/api/regions/" + POGOK + "/preview").param("year", "2025"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.score").value(59))
+        .andExpect(jsonPath("$.data.score").value(60))
         .andExpect(jsonPath("$.data.rank").value(7))
         .andExpect(jsonPath("$.data.type.name").value("정류장 접근 취약형"))
-        .andExpect(jsonPath("$.data.summary").value("정류장이 멀고 걷기 힘들어 똑버스 도입 검토"))
+        .andExpect(jsonPath("$.data.recommended[0].mode").value("DRT"))
+        .andExpect(jsonPath("$.data.summary").value("정류장까지 멀고 고령 인구가 많아 똑버스 도입 검토"))
         .andExpect(jsonPath("$.data.period.type").value("YEAR_ALL"))
-        .andExpect(jsonPath("$.data.typePeriod.months", contains(7)))
-        .andExpect(jsonPath("$.data.typePeriod.type").value("YEAR_LATEST"));
+        .andExpect(jsonPath("$.data.typePeriod.months", hasSize(12)))
+        .andExpect(jsonPath("$.data.typePeriod.type").value("YEAR_ALL"));
   }
 
   @Test
   @DisplayName("7월 미리보기는 그 달 행만 써서 60점, 동부동(60.2)과 동점 7위다")
   void monthlyPreview() throws Exception {
-    // SELECT region_cd, score_total FROM ml_priority WHERE month=7 ORDER BY score_total DESC;
-    //   -- 6위까지 67,66,63,63,62,61 / 동부동 60.2, 포곡읍 60.1 → 둘 다 60점 7위
+    // SELECT region_cd, score_total FROM ml_priority WHERE year=2025 AND unit='dong' AND month=7
+    //   ORDER BY score_total DESC; -- 동부동 60.2, 포곡읍 60.1 → 둘 다 60점 7위
     mockMvc
         .perform(
             get("/api/regions/" + POGOK + "/preview").param("year", "2025").param("month", "7"))
@@ -112,43 +116,47 @@ class PeriodRuleIntegrationTest extends MariaDbTestSupport {
   @Test
   @DisplayName("취약지역 수는 화면 점수(정수 반올림) 50점 이상으로 센다")
   void vulnerableCountByRoundedScore() throws Exception {
-    // SELECT SUM(FLOOR(score_total+0.5)>=50), SUM(is_vulnerable) FROM ml_priority
-    //   WHERE year=2025 AND month=7 AND unit='dong'; -- 9, 8 (DB is_vulnerable보다 1곳 많음)
+    // SELECT SUM(FLOOR(score_total+0.5)>=50) FROM ml_priority
+    //   WHERE year=2025 AND month=7 AND unit='dong'; -- 9
     mockMvc
         .perform(get("/api/dashboard").param("year", "2025").param("month", "7"))
         .andExpect(jsonPath("$.data.summary.vulnerableCount").value(9));
   }
 
   @Test
-  @DisplayName("연간 상세의 같은 유형 지역은 최근 달 기준 5곳, 자기 자신은 없다")
+  @DisplayName("연간 상세의 같은 유형 지역은 연간 행 기준 5곳이고 연간 점수 순이며 자기 자신은 없다")
   void annualDetail() throws Exception {
-    // SELECT region_cd FROM ml_region WHERE month=7 AND type_nm='정류장 접근 취약형'; -- 포곡읍 포함 6곳
+    // SELECT region_cd FROM ml_region WHERE year=2025 AND unit='dong' AND month IS NULL
+    //   AND type_nm='정류장 접근 취약형'; -- 포곡읍 포함 6곳
+    //   연간 점수 순: 이동읍 66, 모현읍 65, (포곡읍 60), 동천동 53, 보라동 44, 신봉동 40
     mockMvc
         .perform(get("/api/regions/" + POGOK).param("year", "2025"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.header.score").value(59))
+        .andExpect(jsonPath("$.data.header.score").value(60))
         .andExpect(jsonPath("$.data.period.months", hasSize(12)))
-        .andExpect(jsonPath("$.data.typePeriod.months", contains(7)))
+        .andExpect(jsonPath("$.data.typePeriod.type").value("YEAR_ALL"))
         .andExpect(jsonPath("$.data.type.sameTypeRegions", hasSize(5)))
+        .andExpect(jsonPath("$.data.type.sameTypeRegions[0].regionName").value("이동읍"))
+        .andExpect(jsonPath("$.data.type.sameTypeRegions[4].regionName").value("신봉동"))
         .andExpect(
             jsonPath("$.data.type.sameTypeRegions[*].regionCode", not(Matchers.hasItem(POGOK))));
   }
 
   @Test
-  @DisplayName("연간 추천은 최근 달(7월) 문장과 같은 달 점수를 내린다")
+  @DisplayName("연간 추천은 연간 행 문장과 점수를 내리고 period는 1~12월 YEAR_ALL이다")
   void annualRecommendation() throws Exception {
     // SELECT created_at, JSON_EXTRACT(options,'$[*].score') FROM ml_explanation
-    //   WHERE month=7 AND region_cd='4146125000'; -- 2026-11-08 20:56, [80.5, 45.8, 27.5]
-    // ml_suitability 같은 달 (DRT 80.5, BUS 45.8, HAPPY_TAXI 27.5)과 일치
+    //   WHERE year=2025 AND unit='dong' AND month IS NULL AND region_cd='4146125000';
+    //   -- 2026-11-10 17:00, [80.7, 46.8, 23.0]
     mockMvc
         .perform(get("/api/regions/" + POGOK + "/recommendation").param("year", "2025"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.createdAt").value("2026-11-08 20:56"))
+        .andExpect(jsonPath("$.data.createdAt").value("2026-11-10 17:00"))
         .andExpect(jsonPath("$.data.options[0].score").value(81))
-        .andExpect(jsonPath("$.data.options[1].score").value(46))
-        .andExpect(jsonPath("$.data.options[2].score").value(28))
+        .andExpect(jsonPath("$.data.options[1].score").value(47))
+        .andExpect(jsonPath("$.data.options[2].score").value(23))
         .andExpect(jsonPath("$.data.period.year").value(2025))
-        .andExpect(jsonPath("$.data.period.months", contains(7)))
-        .andExpect(jsonPath("$.data.period.type").value("YEAR_LATEST"));
+        .andExpect(jsonPath("$.data.period.months", hasSize(12)))
+        .andExpect(jsonPath("$.data.period.type").value("YEAR_ALL"));
   }
 }

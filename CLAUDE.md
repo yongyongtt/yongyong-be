@@ -1,6 +1,6 @@
 # CLAUDE.md — 용인 교통 사각지대 진단 백엔드
 
-RULES_VERSION: R11  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 변경 이력"에 한 줄 남긴다)
+RULES_VERSION: R12  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 변경 이력"에 한 줄 남긴다)
 
 이 파일은 이 저장소에서 일하는 Claude가 매번 따라야 하는 규칙이다.
 규칙과 다른 방법이 더 낫다고 판단되면, 바로 바꾸지 말고 사용자에게 먼저 제안한다.
@@ -38,7 +38,7 @@ RULES_VERSION: R11  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 
 - 앱은 `yongin`에 바로 접속한다. 앱 계정은 `yongin`에 `SELECT`만 가진다 (`yongin_app`은 쓰지 않음, decisions D15). 계정·DB 생성은 root로 한다
 - ML 컨테이너(yong_ml)는 별도 계정을 쓴다 (`ml_` 테이블 5개만 쓰기, decisions D15). Spring은 여전히 쓰기 쿼리를 쓰지 않고, ML 실행은 FastAPI 호출로만 한다 (decisions D17)
 - `.env`의 값은 사용자가 직접 적고, Claude는 이 파일을 읽지 않는다
-- DB 접근: **Spring Data JPA, 읽기 전용 엔티티** (decisions D1). 엔티티는 `@Table(catalog = "yongin", name = "...")`로 DB를 지정한다. MariaDB Dialect는 `catalog`만 한정자로 지원하므로 `schema`를 쓰지 않는다
+- DB 접근: **Spring Data JPA, 읽기 전용 엔티티** (decisions D1). 엔티티는 `@Table(catalog = "yongin", name = "...")`로 DB를 지정한다. MariaDB Dialect는 `catalog`만 한정자로 지원하므로 `schema`를 쓰지 않는다. 예외: `ml_` 엔티티 4개는 `@Subselect("select ... from yongin.ml_...")` (5장)
 - `spring.jpa.hibernate.ddl-auto=none` 고정. `yongin` 스키마를 Hibernate가 만들거나 검사하지 않게 한다 (`update`, `create`, `validate` 금지)
 - 테스트: JUnit 5, AssertJ, Mockito, Spring Boot Test, Testcontainers(MariaDB), ArchUnit
 - 품질 도구: Spotless(google-java-format), JaCoCo(측정만, 기준 미달로 빌드를 막지 않음 — decisions D9)
@@ -54,7 +54,7 @@ RULES_VERSION: R11  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 
 │  ├─ query       PeriodQuery(year, month) 등 공통 요청 값, PeriodService (공통 달·월 검사)
 │  └─ converter   JSON 컬럼용 AttributeConverter (StringListConverter, OptionListConverter)
 ├─ yongin         yongin DB 읽기 전용 엔티티 + repository (테이블당 하나, 여러 기능이 같이 씀)
-│  ├─ entity      MlPriority, MlRegion, MlExplanation, MlModelInfo,
+│  ├─ entity      MlPriority, MlRegion, MlExplanation, MlModelInfo (@Subselect, 연간 = month 0),
 │  │              FeatRegion, FeatRegionMonth, FeatCity, FeatCityMonth
 │  └─ repository  MlPriorityRepository ...
 ├─ dashboard      API 1, 2
@@ -111,8 +111,10 @@ RULES_VERSION: R11  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 
 - 필요한 컬럼만 필드로 둔다. 쓰지 않는 컬럼은 매핑하지 않는다
 - 컬럼명은 Spring Boot 기본 이름 규칙(camelCase → snake_case)으로 맞춘다. 규칙과 다를 때만 `@Column(name = ...)`
 
-**`ml_` 엔티티의 month (연간 NULL 행은 쓰지 않음)**
-- `MlPriority`, `MlRegion`, `MlExplanation`, `MlModelInfo`는 키에 `month`를 넣고 `@SQLRestriction("month is not null")`을 단다. DB의 연간(month NULL) 행은 어떤 조회에도 섞이지 않는다 (decisions D16)
+**`ml_` 엔티티의 month (연간 = month 0)**
+- `MlPriority`, `MlRegion`, `MlExplanation`, `MlModelInfo`는 `@Table` 대신 `@Subselect("select ..., coalesce(month, 0) as month, ... from yongin.ml_...")`로 매핑하고 키에 `month`를 넣는다. DB의 연간(month NULL) 행은 month 0으로 읽는다. 복합 키 일부가 NULL이면 Hibernate가 null 엔티티를 돌려주기 때문이다 (38행 모두 null 확인, decisions D16)
+- 서비스는 `PeriodQuery.monthKey()`(월이 없으면 0)로 기존 조회 메서드를 그대로 쓴다. 공통 달 계산(`findMonths`)은 0을 뺀다
+- 컬럼을 SQL에 나열하므로 쓰는 컬럼을 추가하면 `@Subselect` 문자열도 고친다
 
 **조회 규칙**
 - repository는 `org.springframework.data.repository.Repository<T, ID>`를 상속하고 **조회 메서드만** 선언한다. `JpaRepository`·`CrudRepository`를 쓰지 않는다 (save/delete가 아예 없게)
@@ -121,10 +123,10 @@ RULES_VERSION: R11  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 
 - 서비스 클래스에 `@Transactional(readOnly = true)`
 
 **연간·월 규칙 (decisions D16)**
-- month 있음 → 그 달 행만. month 없음(연간) → 숫자(점수·순위·개수)는 그 연도 월별 값의 평균, 분류·문장(유형, 신뢰도, 추천, 요약)은 그 테이블의 최근 달(그 year·unit의 가장 큰 month)
+- month 있음 → 그 달 행만. month 없음(연간) → `ml_` 값(점수, 유형, 신뢰도, 추천, 요약, 갱신 시각)은 모두 그 테이블의 연간 행(month 0 = DB NULL). ML이 연간을 따로 계산해 둔 값이라 서버가 월 평균·최근 달을 만들지 않는다 (decisions D16). `feat_`는 그대로(연간 = `FeatRegion`·`FeatCity`, 시 평균 연간 성사율·생활인구만 `FeatCityMonth` 집계)
 - 점수는 정수로 반올림해 내리고(지도 포함), 순위는 그 정수 점수로 다시 매긴다. 동점은 같은 순위, 다음 순위는 건너뛴다 (1, 2, 3, 3, 5). DB `rank_total`, `is_vulnerable`은 쓰지 않는다. 취약지역 = 정수 점수 50점 이상
 - 월 검사는 `PeriodService.checkMonth` 하나로 한다 (API 1~5, 7). 월 범위를 하드코딩하지 않고 조회 시점에 테이블에 있는 달로 계산한다
-- API 1~7 응답은 `data` 맨 앞에 `period { year, months, type }`(`common.response.PeriodResponse`)를 내린다. type = `YEAR_ALL`(그 해 월별 값 전체 반영) / `YEAR_LATEST`(그 해 최근 달) / `MONTH`(고른 달), months는 항상 배열. API 3·4는 유형 기준으로 `typePeriod`를 하나 더 내린다. 고를 수 있는 연·월 목록은 응답에 넣지 않는다
+- API 1~7 응답은 `data` 맨 앞에 `period { year, months, type }`(`common.response.PeriodResponse`)를 내린다. type = `YEAR_ALL`(연간, months = 공통 달. API 5·6은 `feat_region_month`의 달) / `MONTH`(고른 달), months는 항상 배열. `YEAR_LATEST`는 프론트 호환으로 enum에만 남기고 내리지 않는다. API 3·4는 `typePeriod`를 하나 더 내린다(지금은 `period`와 같은 값). 고를 수 있는 연·월 목록은 응답에 넣지 않는다
 - API 8은 예외: `period` 없이 FastAPI RunStatus를 그대로 `data`에 담는다 (시각은 ISO 그대로, decisions D17)
 
 **조회 조건·값**
@@ -207,15 +209,15 @@ API 하나당 최소 아래 세 종류를 만든다.
 
 - API 8은 repository 대신 client 테스트(`MockRestServiceServer`)로 FastAPI 응답(202·200·409·422·500, 연결 실패)이 우리 응답·에러로 바뀌는지 본다. 테스트에서 실제 FastAPI를 호출하지 않는다 (실행하면 `ml_` 덮어쓰기와 LLM 사용이 생김)
 
-- seed: `src/test/resources/db/seed-dong-2025.sql` (11/8 DB에서 행정동만 추린 것, 연간 NULL 행 포함). 공개 저장소라 git에 올리지 않는다 (decisions D11)
+- seed: `src/test/resources/db/seed-dong-2025.sql` (11/11 최종본 DB에서 행정동만 추린 것, 연간 NULL 행 포함). 공개 저장소라 git에 올리지 않는다 (decisions D11)
 - `@DataJpaTest` repository 테스트에는 `@Tag("db")`를 붙인다. CI는 `-PexcludeTags=db`로 이 태그를 빼고 돌고, 로컬 `./gradlew test`는 전부 돈다. CI가 repository 테스트를 대신 돌려주지 않으므로 PR 전에 로컬에서 전체 테스트를 통과시킨다
 - 컨테이너 DB 이름은 `yongin`으로 만든다 (`.withDatabaseName("yongin")`). 엔티티가 `catalog = "yongin"`, `@Subselect`가 `yongin.ml_priority`를 가리키기 때문
 - MariaDB 컨테이너는 테스트 전체가 하나를 같이 쓴다 (`MariaDbTestSupport`의 static 컨테이너 하나). 테스트 클래스마다 새로 띄우지 않는다
-- 엔티티를 새로 만들면 그 엔티티 repository 테스트에 매핑 확인을 넣는다: seed 행 수, 키 조회 1건, JSON·Boolean 필드 값 (특히 `ml_` 엔티티는 월 목록에 NULL이 없는지)
+- 엔티티를 새로 만들면 그 엔티티 repository 테스트에 매핑 확인을 넣는다: seed 행 수, 키 조회 1건, JSON·Boolean 필드 값 (특히 `ml_` 엔티티는 연간 행이 month 0으로 null 엔티티 없이 읽히는지, 월 목록에 0이 없는지)
 - 기대값은 **seed에서 SQL로 직접 확인한 값만** 쓴다. 숫자를 추측하거나 명세 예시에서 그냥 베끼지 않는다. 확인에 쓴 SQL을 테스트 주석에 한 줄로 남긴다
-- 이미 확인된 기준값 (11/8 DB, 2025, dong, 연간): 지역 38개, 취약지역 9개, 평균 38.3, 이동읍·원삼면 66점 공동 1위 / 포곡읍(4146125000) 59점·7위 (7월 60점, 동부동과 공동 7위) / 공통 달 1~7 / 시 평균 택시 성사율 53.8%, 생활인구 6,267명, 정류장 81.6개, 고령 17.7%
+- 이미 확인된 기준값 (11/11 최종본 DB, 2025, dong, 연간 = NULL 행): 지역 38개, 취약지역 9개, 평균 39.1, 원삼면 68점 단독 1위·이동읍 66점 2위 / 포곡읍(4146125000) 60점·7위, 동부동과 공동 (7월도 60점·7위) / 연간 갱신 시각 2026-11-10 17:00 / 공통 달 1~12 / 시 평균 택시 성사율 53.8%, 생활인구 6,267명, 정류장 81.6개, 고령 17.7%
 - 테스트 이름은 `@DisplayName`에 한글 문장으로: `"월을 고르면 그 달 점수와 순위를 내린다"`
-- 실패 케이스를 반드시 넣는다: 없는 regionCode, 범위 밖 month, 공통 달에 없는 month(지금은 8월)
+- 실패 케이스를 반드시 넣는다: 없는 regionCode, 범위 밖 month, 공통 달에 없는 month (최종본 seed는 공통 달이 1~12라 서비스 테스트에서 mock으로)
 - 테스트도 간결하게: 정상 케이스 1~2개 + 위 실패 케이스면 충분하다. 같은 내용을 여러 층에서 반복 검증하지 않는다 (예: 파라미터 검증은 컨트롤러 테스트에서만, SQL 결과는 repository 테스트에서만)
 
 ## 9. 자동 검증 게이트 (CI)
@@ -260,4 +262,5 @@ GitHub Actions `ci.yml`이 PR마다 아래를 돌리고, 하나라도 실패하�
 | 2026-11-06 | R8 | API 7 `options` `score` 정수 반올림, 없는 연도와 지역도 `RECOMMENDATION_NOT_FOUND` | 사용자 결정, decisions D12 |
 | 2026-11-07 | R9 | 앱은 `yongin`에 SELECT 전용 계정 하나로 접속, `yongin_app` 제거 | 사용자 결정 (배포 준비 중 `yongin_app`을 쓰는 엔티티·테이블이 없음을 확인), decisions D15 |
 | 2026-11-08 | R10 | 연간 = 서버 재계산(숫자 월 평균, 분류·문장 최근 달), NULL 행 미사용(`@SQLRestriction`), 정수 점수·재계산 순위, `SUITABILITY_NOT_READY`, 공통 `period`, seed 11/8 기준, 확인 SQL 반올림 | 사용자 결정 (11/8 DB에 테이블마다 다른 월별 행 추가), decisions D4·D7·D12 변경, D16 |
+| 2026-11-11 | R12 | 연간 = `ml_` 연간(NULL) 행, `ml_` 엔티티 4개는 `@Subselect`로 NULL을 month 0으로 읽음(`@Table` 예외), 월 평균·최근 달 계산 제거(순위·취약지역은 정수 점수 기준 유지), 연간 period는 모두 `YEAR_ALL` + 공통 달(`YEAR_LATEST` 미사용), seed·기준값 11/11 최종본 | 사용자 결정 (최종본 DB에 `ml_` 5개 테이블 모두 NULL 행, 월 평균·12월과 값이 다름), decisions D16 변경 |
 | 2026-11-10 | R11 | API 8 범위 포함(ML 실행 요청·상태), `ml` 패키지·`client`, 에러코드 `ML_RUNNING`·`ML_UNAVAILABLE`, API 8 `period` 예외, ML 컨테이너 별도 계정, API 8 client 테스트 | 사용자 결정 (yong_ml FastAPI 연동), decisions D5·D15 변경, D17 |

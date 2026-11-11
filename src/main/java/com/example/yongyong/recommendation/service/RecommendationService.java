@@ -28,12 +28,7 @@ public class RecommendationService {
 
   public RecommendationResponse getRecommendation(String regionCode, PeriodQuery query) {
     periodService.checkMonth(query);
-    Integer month =
-        PeriodService.monthOrLatest(
-            query, mlExplanationRepository.findMonths(query.year(), UNIT_DONG));
-    if (month == null) {
-      throw new BusinessException(ErrorCode.RECOMMENDATION_NOT_FOUND);
-    }
+    int month = query.monthKey();
     MlExplanation explanation =
         mlExplanationRepository
             .findByYearAndMonthAndUnitAndRegionCd(query.year(), month, UNIT_DONG, regionCode)
@@ -44,9 +39,10 @@ public class RecommendationService {
             .map(MlRegion::getLowReliability)
             .orElse(false);
 
-    // options의 score는 같은 달 ml_suitability와 같은 값 (11/8 DB 861건 일치 확인)
+    // options의 score는 같은 기간 ml_suitability와 같은 값 (11/8 DB 861건 일치 확인)
     return new RecommendationResponse(
-        PeriodResponse.latest(query, month),
+        PeriodResponse.all(
+            query, query.month() == null ? periodService.availableMonths(query.year()) : null),
         explanation.getIsKeep(),
         explanation.getCreatedAt(),
         explanation.getOptions().stream().map(this::toOption).toList(),

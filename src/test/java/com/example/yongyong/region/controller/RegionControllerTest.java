@@ -45,7 +45,7 @@ class RegionControllerTest {
         .willReturn(
             new RegionPreviewResponse(
                 new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
-                new PeriodResponse(2025, List.of(7), PeriodResponse.Type.YEAR_LATEST),
+                new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
                 "4146125000",
                 "포곡읍",
                 "처인구",
@@ -76,8 +76,8 @@ class RegionControllerTest {
         .andExpect(jsonPath("$.data.period.months[1]").value(2))
         .andExpect(jsonPath("$.data.period.type").value("YEAR_ALL"))
         .andExpect(jsonPath("$.data.typePeriod.year").value(2025))
-        .andExpect(jsonPath("$.data.typePeriod.months[0]").value(7))
-        .andExpect(jsonPath("$.data.typePeriod.type").value("YEAR_LATEST"));
+        .andExpect(jsonPath("$.data.typePeriod.months[1]").value(2))
+        .andExpect(jsonPath("$.data.typePeriod.type").value("YEAR_ALL"));
   }
 
   @Test
@@ -87,7 +87,7 @@ class RegionControllerTest {
         .willReturn(
             new RegionPreviewResponse(
                 new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
-                new PeriodResponse(2025, List.of(7), PeriodResponse.Type.YEAR_LATEST),
+                new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
                 "4146125000",
                 "포곡읍",
                 "처인구",
@@ -141,7 +141,7 @@ class RegionControllerTest {
         .willReturn(
             new RegionDetailResponse(
                 new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
-                new PeriodResponse(2025, List.of(7), PeriodResponse.Type.YEAR_LATEST),
+                new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
                 new RegionDetailResponse.Header("4146125000", "포곡읍", "처인구", 60, 7),
                 new RegionDetailResponse.Reliability(false, null),
                 new RegionDetailResponse.Type(
@@ -163,8 +163,8 @@ class RegionControllerTest {
         .andExpect(jsonPath("$.data.period.months[1]").value(2))
         .andExpect(jsonPath("$.data.period.type").value("YEAR_ALL"))
         .andExpect(jsonPath("$.data.typePeriod.year").value(2025))
-        .andExpect(jsonPath("$.data.typePeriod.months[0]").value(7))
-        .andExpect(jsonPath("$.data.typePeriod.type").value("YEAR_LATEST"))
+        .andExpect(jsonPath("$.data.typePeriod.months[1]").value(2))
+        .andExpect(jsonPath("$.data.typePeriod.type").value("YEAR_ALL"))
         .andExpect(jsonPath("$.data.reliability.low").value(false))
         .andExpect(jsonPath("$.data.reliability.note").value((Object) null))
         .andExpect(jsonPath("$.data.type.name").value("정류장 접근 취약형"))

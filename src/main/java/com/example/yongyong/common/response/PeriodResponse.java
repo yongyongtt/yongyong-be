@@ -8,27 +8,14 @@ public record PeriodResponse(Integer year, List<Integer> months, Type type) {
 
   public enum Type {
     YEAR_ALL,
-    YEAR_LATEST,
+    YEAR_LATEST, // 2026-11-11부터 내리지 않음. 프론트 호환으로 남김 (decisions D16)
     MONTH
   }
 
-  // 연간이면 그 해 월별 값 전체(allMonths)를 반영한 값
+  // 연간이면 YEAR_ALL + allMonths(그 해 전체를 반영한 값), 월이면 MONTH + [그 달]
   public static PeriodResponse all(PeriodQuery query, List<Integer> allMonths) {
     return query.month() == null
         ? new PeriodResponse(query.year(), allMonths, Type.YEAR_ALL)
-        : month(query);
-  }
-
-  // 연간이면 그 해 최근 달(latestMonth) 값. 최근 달이 없으면 빈 목록
-  public static PeriodResponse latest(PeriodQuery query, Integer latestMonth) {
-    if (query.month() != null) {
-      return month(query);
-    }
-    return new PeriodResponse(
-        query.year(), latestMonth == null ? List.of() : List.of(latestMonth), Type.YEAR_LATEST);
-  }
-
-  private static PeriodResponse month(PeriodQuery query) {
-    return new PeriodResponse(query.year(), List.of(query.month()), Type.MONTH);
+        : new PeriodResponse(query.year(), List.of(query.month()), Type.MONTH);
   }
 }

@@ -140,29 +140,37 @@ class RecommendationServiceTest {
   }
 
   @Test
-  @DisplayName("월이 없으면 ml_explanation의 최근 달 추천과 같은 달 신뢰도를 내리고, 점수도 그 달 options 값이다")
-  void annualUsesLatestMonth() {
-    given(mlExplanationRepository.findMonths(2025, "dong")).willReturn(List.of(1, 7, 3));
-    MlExplanation explanation =
-        explanation(
-            false,
-            List.of(
-                new OptionJson(
-                    "DRT", "똑버스", "부제", "설명", "추천", 1, 80.5, false, List.of(), List.of(), null)));
-    given(mlExplanationRepository.findByYearAndMonthAndUnitAndRegionCd(2025, 7, "dong", CODE))
+  @DisplayName(
+      "월이 없으면 ml_explanation 연간(NULL) 행 추천과 ml_region 연간 행 신뢰도를 내리고, period는 YEAR_ALL과 공통 달")
+  void annualUsesYearRow() {
+    MlExplanation explanation = new MlExplanation();
+    ReflectionTestUtils.setField(explanation, "isKeep", false);
+    ReflectionTestUtils.setField(explanation, "createdAt", "2026-11-10 17:00");
+    ReflectionTestUtils.setField(
+        explanation,
+        "options",
+        List.of(
+            new OptionJson(
+                "DRT", "똑버스", "부제", "설명", "추천", 1, 80.7, false, List.of(), List.of(), null)));
+    ReflectionTestUtils.setField(explanation, "reasons", List.of("연간 이유"));
+    ReflectionTestUtils.setField(explanation, "cautions", List.of("연간 주의"));
+    given(mlExplanationRepository.findByYearAndMonthAndUnitAndRegionCd(2025, 0, "dong", CODE))
         .willReturn(Optional.of(explanation));
     MlRegion region = new MlRegion();
     ReflectionTestUtils.setField(region, "lowReliability", true);
-    given(mlRegionRepository.findByYearAndMonthAndUnitAndRegionCd(2025, 7, "dong", CODE))
+    given(mlRegionRepository.findByYearAndMonthAndUnitAndRegionCd(2025, 0, "dong", CODE))
         .willReturn(Optional.of(region));
+    given(periodService.availableMonths(2025)).willReturn(List.of(1, 2, 3));
 
     RecommendationResponse response =
         recommendationService.getRecommendation(CODE, new PeriodQuery(2025, null));
 
+    assertThat(response.createdAt()).isEqualTo("2026-11-10 17:00");
     assertThat(response.options().getFirst().score()).isEqualTo(81);
+    assertThat(response.reasons()).containsExactly("연간 이유");
     assertThat(response.lowReliability()).isTrue();
     assertThat(response.period())
-        .isEqualTo(new PeriodResponse(2025, List.of(7), PeriodResponse.Type.YEAR_LATEST));
+        .isEqualTo(new PeriodResponse(2025, List.of(1, 2, 3), PeriodResponse.Type.YEAR_ALL));
   }
 
   @Test
@@ -176,9 +184,10 @@ class RecommendationServiceTest {
   }
 
   @Test
-  @DisplayName("그 연도에 추천 달이 하나도 없으면 RECOMMENDATION_NOT_FOUND를 던진다")
-  void noMonths() {
-    given(mlExplanationRepository.findMonths(2024, "dong")).willReturn(List.of());
+  @DisplayName("연간 추천 행이 없으면 RECOMMENDATION_NOT_FOUND를 던진다")
+  void noYearRow() {
+    given(mlExplanationRepository.findByYearAndMonthAndUnitAndRegionCd(2024, 0, "dong", CODE))
+        .willReturn(Optional.empty());
 
     assertThatThrownBy(
             () -> recommendationService.getRecommendation(CODE, new PeriodQuery(2024, null)))

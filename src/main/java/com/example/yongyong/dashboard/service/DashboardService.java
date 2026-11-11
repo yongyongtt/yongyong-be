@@ -14,9 +14,6 @@ import com.example.yongyong.yongin.repository.MlModelInfoRepository;
 import com.example.yongyong.yongin.repository.MlPriorityRepository;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,7 +44,7 @@ public class DashboardService {
     }
   }
 
-  // rawScore: 그 달 score_total 또는 월 평균 (반올림 전), score: 정수 반올림, rank: score 기준 재계산
+  // rawScore: 그 기간 score_total (반올림 전), score: 정수 반올림, rank: score 기준 재계산
   public record RegionScore(
       String regionCode, String regionName, String gu, double rawScore, int score, int rank) {}
 
@@ -57,7 +54,7 @@ public class DashboardService {
 
     return new DashboardResponse(
         scores.period(query),
-        mlModelInfoRepository.findLatestTrainedAt(query.year(), query.month()),
+        mlModelInfoRepository.findLatestTrainedAt(query.year(), query.monthKey()),
         new DashboardResponse.Summary(
             scores.regions().size(),
             scores.regions().stream().filter(r -> r.score() >= VULNERABLE_SCORE).count(),
@@ -82,38 +79,24 @@ public class DashboardService {
             .toList());
   }
 
-  // month가 있으면 그 달 행, 없으면 월 평균. 행이 없으면 PERIOD_NOT_FOUND
+  // 그 달 또는 연간(month 0) 행. 행이 없으면 PERIOD_NOT_FOUND. 연간 months는 공통 달
   public Scores scores(PeriodQuery query) {
     List<MlPriority> rows =
-        query.month() == null
-            ? mlPriorityRepository.findByYearAndUnit(query.year(), UNIT_DONG)
-            : mlPriorityRepository.findByYearAndMonthAndUnit(
-                query.year(), query.month(), UNIT_DONG);
+        mlPriorityRepository.findByYearAndMonthAndUnit(query.year(), query.monthKey(), UNIT_DONG);
     if (rows.isEmpty()) {
       throw new BusinessException(ErrorCode.PERIOD_NOT_FOUND);
     }
 
-    Map<String, List<MlPriority>> byRegion =
-        rows.stream()
-            .collect(
-                Collectors.groupingBy(MlPriority::getRegionCd, TreeMap::new, Collectors.toList()));
     List<RegionScore> unranked =
-        byRegion.values().stream()
-            .map(regionRows -> {
-              MlPriority first = regionRows.getFirst();
-              double raw =
-                  regionRows.stream()
-                      .mapToDouble(MlPriority::getScoreTotal)
-                      .average()
-                      .orElseThrow();
-              return new RegionScore(
-                  first.getRegionCd(),
-                  first.getRegionNm(),
-                  first.getGu(),
-                  raw,
-                  (int) Math.round(raw),
-                  0);
-            })
+        rows.stream()
+            .map(row ->
+                new RegionScore(
+                    row.getRegionCd(),
+                    row.getRegionNm(),
+                    row.getGu(),
+                    row.getScoreTotal(),
+                    (int) Math.round(row.getScoreTotal()),
+                    0))
             .toList();
     List<RegionScore> ranked =
         unranked.stream()
@@ -124,7 +107,10 @@ public class DashboardService {
             })
             .sorted(RANK_ORDER)
             .toList();
-    List<Integer> months = rows.stream().map(MlPriority::getMonth).distinct().sorted().toList();
+    List<Integer> months =
+        query.month() == null
+            ? periodService.availableMonths(query.year())
+            : List.of(query.month());
     return new Scores(months, ranked);
   }
 

@@ -36,7 +36,7 @@ class RecommendationControllerTest {
     given(recommendationService.getRecommendation("4146125000", new PeriodQuery(2025, null)))
         .willReturn(
             new RecommendationResponse(
-                new PeriodResponse(2025, List.of(7), PeriodResponse.Type.YEAR_LATEST),
+                new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
                 false,
                 "2026-11-05 11:03",
                 List.of(
@@ -92,8 +92,8 @@ class RecommendationControllerTest {
         .andExpect(jsonPath("$.data.cautions[0]").value("주의"))
         .andExpect(jsonPath("$.data.lowReliability").value(false))
         .andExpect(jsonPath("$.data.period.year").value(2025))
-        .andExpect(jsonPath("$.data.period.months[0]").value(7))
-        .andExpect(jsonPath("$.data.period.type").value("YEAR_LATEST"));
+        .andExpect(jsonPath("$.data.period.months[1]").value(2))
+        .andExpect(jsonPath("$.data.period.type").value("YEAR_ALL"));
   }
 
   @Test

@@ -38,25 +38,23 @@ class DashboardServiceTest {
   @InjectMocks private DashboardService dashboardService;
 
   @Test
-  @DisplayName("연간 점수는 지역별 월 평균을 정수로 반올림하고, 동점은 같은 순위·다음 순위는 건너뛴다")
+  @DisplayName("연간 점수는 연간(NULL) 행 점수를 정수로 반올림하고, 동점은 같은 순위·다음 순위는 건너뛴다. months는 공통 달")
   void annualScores() {
-    given(mlPriorityRepository.findByYearAndUnit(2025, "dong"))
+    given(mlPriorityRepository.findByYearAndMonthAndUnit(2025, 0, "dong"))
         .willReturn(
             List.of(
-                row(1, "A", 66.0),
-                row(2, "A", 66.0),
-                row(1, "B", 65.8),
-                row(2, "B", 66.0), // 평균 65.9 → 66, A와 동점
-                row(1, "C", 62.0),
-                row(2, "C", 63.0))); // 평균 62.5 → 63, 3위
+                yearRow("B", 65.6), // 66, A와 동점이지만 반올림 전 점수가 낮아 뒤
+                yearRow("A", 66.4),
+                yearRow("C", 62.5))); // 63, 3위
+    given(periodService.availableMonths(2025)).willReturn(List.of(1, 2, 3));
 
     Scores scores = dashboardService.scores(new PeriodQuery(2025, null));
 
-    assertThat(scores.months()).containsExactly(1, 2);
+    assertThat(scores.months()).containsExactly(1, 2, 3);
     assertThat(scores.regions())
         .extracting(RegionScore::regionCode, RegionScore::score, RegionScore::rank)
         .containsExactly(tuple("A", 66, 1), tuple("B", 66, 1), tuple("C", 63, 3));
-    assertThat(scores.regions().get(1).rawScore()).isEqualTo(65.9, within());
+    assertThat(scores.regions().get(1).rawScore()).isEqualTo(65.6, within());
   }
 
   @Test
@@ -88,9 +86,9 @@ class DashboardServiceTest {
   }
 
   @Test
-  @DisplayName("점수 행이 없으면 PERIOD_NOT_FOUND를 던진다")
+  @DisplayName("연간 행이 없으면 PERIOD_NOT_FOUND를 던진다")
   void scoresEmpty() {
-    given(mlPriorityRepository.findByYearAndUnit(2024, "dong")).willReturn(List.of());
+    given(mlPriorityRepository.findByYearAndMonthAndUnit(2024, 0, "dong")).willReturn(List.of());
 
     assertThatThrownBy(() -> dashboardService.scores(new PeriodQuery(2024, null)))
         .isInstanceOf(BusinessException.class)
@@ -99,24 +97,22 @@ class DashboardServiceTest {
   }
 
   @Test
-  @DisplayName("연간 요약: 취약지역은 화면 점수(정수 반올림) 50점 이상, 평균은 지역 평균들의 평균, period는 YEAR_ALL과 평균에 쓴 달")
+  @DisplayName("연간 요약: 연간 행 점수로 취약지역(정수 50점 이상)과 평균을 내고, 갱신 시각도 연간 행, period는 YEAR_ALL과 공통 달")
   void annualDashboard() {
-    given(mlPriorityRepository.findByYearAndUnit(2025, "dong"))
+    given(mlPriorityRepository.findByYearAndMonthAndUnit(2025, 0, "dong"))
         .willReturn(
             List.of(
-                row(1, "A", 70.0),
-                row(2, "A", 68.0), // 69
-                row(1, "B", 49.4),
-                row(2, "B", 49.8), // 49.6 → 화면 50점이라 취약지역에 센다
-                row(1, "C", 10.0),
-                row(2, "C", 11.0))); // 10.5
-    given(mlModelInfoRepository.findLatestTrainedAt(2025, null)).willReturn("2026-11-08 20:55");
+                yearRow("A", 69.0),
+                yearRow("B", 49.6), // 화면 50점이라 취약지역에 센다
+                yearRow("C", 10.5)));
+    given(periodService.availableMonths(2025)).willReturn(List.of(1, 2));
+    given(mlModelInfoRepository.findLatestTrainedAt(2025, 0)).willReturn("2026-11-10 17:00");
 
     DashboardResponse response = dashboardService.getDashboard(new PeriodQuery(2025, null));
 
     assertThat(response.period())
         .isEqualTo(new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL));
-    assertThat(response.updatedAt()).isEqualTo("2026-11-08 20:55");
+    assertThat(response.updatedAt()).isEqualTo("2026-11-10 17:00");
     assertThat(response.summary().regionCount()).isEqualTo(3);
     assertThat(response.summary().vulnerableCount()).isEqualTo(2);
     // (69 + 49.6 + 10.5) / 3 = 43.0333
@@ -147,8 +143,9 @@ class DashboardServiceTest {
   @DisplayName("TOP 10은 10개만 내리지만 개수와 평균은 전체 지역으로 계산한다")
   void top10Limit() {
     List<MlPriority> rows = new ArrayList<>();
-    IntStream.rangeClosed(1, 11).forEach(i -> rows.add(row(1, "R" + (char) ('a' + i), 100.0 - i)));
-    given(mlPriorityRepository.findByYearAndUnit(2025, "dong")).willReturn(rows);
+    IntStream.rangeClosed(1, 11).forEach(i -> rows.add(yearRow("R" + (char) ('a' + i), 100.0 - i)));
+    given(mlPriorityRepository.findByYearAndMonthAndUnit(2025, 0, "dong")).willReturn(rows);
+    given(periodService.availableMonths(2025)).willReturn(List.of(1));
 
     DashboardResponse response = dashboardService.getDashboard(new PeriodQuery(2025, null));
 
@@ -176,8 +173,9 @@ class DashboardServiceTest {
   @Test
   @DisplayName("지도는 전체 지역을 정수 점수와 재계산 순위로 내리고 period를 함께 내린다")
   void map() {
-    given(mlPriorityRepository.findByYearAndUnit(2025, "dong"))
-        .willReturn(List.of(row(1, "B", 60.0), row(1, "A", 68.1), row(2, "A", 68.0)));
+    given(mlPriorityRepository.findByYearAndMonthAndUnit(2025, 0, "dong"))
+        .willReturn(List.of(yearRow("B", 60.0), yearRow("A", 68.1)));
+    given(periodService.availableMonths(2025)).willReturn(List.of(1, 2));
 
     DashboardMapResponse response = dashboardService.getMap(new PeriodQuery(2025, null));
 
@@ -202,5 +200,10 @@ class DashboardServiceTest {
     ReflectionTestUtils.setField(row, "gu", "처인구");
     ReflectionTestUtils.setField(row, "scoreTotal", score);
     return row;
+  }
+
+  // 연간 행은 month 0 (DB month NULL)
+  private MlPriority yearRow(String code, double score) {
+    return row(0, code, score);
   }
 }
