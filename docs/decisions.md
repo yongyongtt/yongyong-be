@@ -46,6 +46,7 @@
 - 변경 (2026-11-05): 상태 제안 → 확정 / 사용자 결정
 - 변경 (2026-11-05): 지역 API도 연도 데이터가 아예 없으면 `PERIOD_NOT_FOUND`, 연도는 있는데 지역이 없으면 `REGION_NOT_FOUND` / API 1·2와 맞춘다. 사용자 결정
 - 변경 (2026-11-08): 고른 월이 공통 달(`ml_priority`·`ml_region`·`ml_explanation`)에 없으면 `PERIOD_NOT_FOUND` → 404 `SUITABILITY_NOT_READY` "존재하지 않는 달입니다." (API 1~5, 7 공통, `PeriodService.checkMonth`) / 사용자 결정. 판단 순서는 연도 → 월 → 지역
+- 변경 (2026-11-12): API 9(통합 최적안)는 연도 → 월(공통 달, `plan_` 테이블은 넣지 않음) → 그 기간 `plan_summary` 행이 없으면 404 `PLAN_NOT_FOUND` / 사용자 결정. plan 적재가 늦어도 API 1~7은 막히지 않게 한다 (D18)
 
 ## D8. 응답 형식 ApiResponse로 통일, 예외는 BusinessException + ControllerAdvice
 - 상태: 확정 (2026-11-05)
@@ -113,3 +114,12 @@
 - 고름: `POST /api/ml/run`, `GET /api/ml/run/status`를 FastAPI와 같은 경로로 공개(nginx `/api/`). FastAPI 응답(RunStatus)을 그대로 `data`에 담고, 409 → `ML_RUNNING`(409, 실행 중 재요청 거절), 422 → `INVALID_REQUEST`, 500·연결 실패·타임아웃 → `ML_UNAVAILABLE`(502). Spring이 year·month를 먼저 검사. `period`는 내리지 않음, 시각은 ISO 그대로. ML 서버는 compose `ml` 서비스(외부 포트 없음), Dockerfile은 이 저장소에 두고 yong_ml은 서버에 클론만 / 고르지 않음: 지역별 다시 생성 가안, `/api/internal/` 비공개 경로, FastAPI 끝날 때까지 대기, yong_ml 저장소 수정, Dockerfile 없이 시작 시 pip 설치
 - 이유: FastAPI는 기간 전체를 약 15분 동안 다시 계산하고 202로 바로 응답한다. 해커톤 시연에서는 호출 가능함만 보여주면 되므로 Spring은 얇게 중계만 한다. 시연에서 프론트가 눌러야 해서 공개하고, 동시 실행은 ML의 `GET_LOCK`으로 하나만 돈다. API 7의 `createdAt` 형식은 건드리지 않는다
 - 다시 볼 때: 해커톤 후 공개 운영이면 인증 또는 비공개 경로로 바꾼다
+
+## D18. 통합 최적안(API 9)은 세 안을 한 번에 내리는 API 하나
+- 상태: 확정 (2026-11-12)
+- 고름: `GET /api/plans`(`year`, `month`) 하나로 `plans[]` 3개(1 효율형, 2 형평형, 3 균형형)에 카드 요약 + 투입 순서(`regions`) + 예산 밖(`skipped`)을 모두 담는다. 예산은 안마다 `plans[].budget`, 수단 칩 `modeCounts`는 0도 포함해 항상 3개(BUS → DRT → HAPPY_TAXI). 그 기간 plan 행이 없으면 404 `PLAN_NOT_FOUND`. `plan_` 테이블은 공통 달 계산에 넣지 않는다 / 고르지 않음: 카드 요약 API + 안 상세 API 2개로 나누기, 예산을 맨 위 하나로 내리기, 0인 수단 빼기, `PERIOD_NOT_FOUND` 재사용, 공통 달에 `plan_` 포함
+- 이유: 안은 3개로 고정이고 기간당 지역 줄이 연간 27개(안마다 포함 5 + 예산 밖 4) 수준이라 나눠서 얻는 게 없다. 한 번에 내리면 카드를 눌러도 요청 없이 바로 바뀌고, "안을 누르면 지도·TOP 10에 반영"도 `regions[].regionCode`로 프론트가 처리한다. 예산은 지금 세 안이 같지만 안마다 달라질 수 있어 안 단위로 둔다. plan 적재가 늦은 달이 있어도 API 1~7이 같이 막히지 않게 공통 달과 분리한다. 사용자 결정
+- 세부: 12일자 DB(`yongin_2026-11-12.sql`)에서 `plan_summary`(39행)·`plan_region`(4,290행)만 추가되고 기존 32개 테이블은 그대로다. 엔티티 `PlanSummary`(year, month, plan), `PlanRegion`(year, month, plan, unit, regionCd)을 D16과 같이 `@Subselect`(`coalesce(month, 0)`)로 읽는다 (키 중복 0 확인). `unit = 'dong'`만(D6), `status = '후보 아님'` 행은 내리지 않는다. 금액은 원 단위 정수 그대로, 억 변환·막대 비율은 프론트. 응답 키는 기존 DTO에 맞춘다(`rank`, `regionCode`, `regionName`, `gu`, `mode`·`name`). 앱 계정은 `yongin.*` SELECT라 새 테이블에 GRANT가 필요 없다(D15)
+- 범위 밖: "단가 ±30%" 줄(계산하지 않음), 하단 단가·출처 안내(프론트 고정 문구), 행정동 상세의 안별 한 줄(`plan_region.line`), 리 단위(`village`) 행
+- 다시 볼 때: API 8(ML 실행)이 `plan_` 테이블도 다시 만들면 ML 계정에 `plan_` 쓰기 권한을 추가한다(D15). 행정동 상세의 안별 한 줄이 필요해지면 API 4에 붙일지 정한다
+- 변경 (2026-11-12): 지도·TOP 10 통합 최적안 토글용으로 `plans[].byRegion` 추가 (38개 전체, status·mode). 색 규칙은 프론트 / 고르지 않음: API 1·2 응답에 plan 필드 추가, regions·skipped를 byRegion 하나로 합치기, 서버가 범례 값 계산 / 이유: 기존 JSON을 바꾸지 않고, 지도·TOP 10이 plan 데이터에 묶이지 않으며, 카드 전환 시 재호출이 없다. 이미 읽는 114행으로 만들어 조회도 늘지 않는다. 사용자 결정

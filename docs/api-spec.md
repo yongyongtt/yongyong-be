@@ -1,10 +1,12 @@
-# API 명세 v3 (API 1~8)
+# API 명세 v3 (API 1~9)
 
 원본: Notion `API 명세서 > API 목록(AI) v3` (2026-11-05 기준). 노션과 이 문서가 다르면 사용자에게 알린다.
 2026-11-08: 11/8 DB 월별 행 반영으로 연간 정의, 공통 `period`(availableYears·availableMonths 삭제, API 1 `updatedAt`은 `data` 바로 아래로), API 7 `month`, `SUITABILITY_NOT_READY` 추가 (decisions D16). 노션에도 반영 필요.
 8번 `POST /api/regions/{regionCode}/recommendation/regenerate`(AI 추천 다시 생성, 내부용)는 저장 위치 미정이라 이번 범위에서 **제외**한다.
 2026-11-10: 8번 가안을 폐기하고 yong_ml FastAPI(`api.py`) 기준 ML 실행 요청·상태 조회 2개로 다시 정함 (decisions D5, D17). 노션에도 반영 필요.
 2026-11-11: 최종본 DB 반영으로 연간 = `ml_` 테이블의 연간(month NULL) 행, 연간 `period`·`typePeriod`는 모두 `YEAR_ALL` (decisions D16 변경). 노션에도 반영 필요.
+2026-11-12: 12일자 DB에 `plan_summary`·`plan_region` 추가로 9번 통합 최적안(`GET /api/plans`) 추가, 에러 `PLAN_NOT_FOUND` 추가 (decisions D18). 노션에도 반영 필요.
+2026-11-12: 9번 `plans[].byRegion` 추가 (지도·TOP 10 통합 최적안 토글용, 행정동 38개 전체, decisions D18 변경). 노션에도 반영 필요.
 
 ## 공통
 
@@ -29,9 +31,9 @@
 - 점수는 정수로 반올림해 내리고, 순위는 그 정수 점수로 다시 매긴다. 동점은 같은 순위, 다음 순위는 건너뛴다 (1, 2, 3, 3, 5). 월을 고른 경우도 DB `rank_total` 대신 재계산 순위를 쓴다
 - 정렬: 순위 → 같은 순위면 반올림 전 점수 높은 순 → `region_cd` (decisions D12). 예: 연간 포곡읍 60.3이 동부동 59.5보다 먼저, 둘 다 7위
 - 취약지역 = 정수 점수 50점 이상 (DB `is_vulnerable` 대신)
-- 고를 수 있는 달(공통 달) = `ml_priority`·`ml_region`·`ml_explanation`에 공통으로 있는 달. 월 범위는 하드코딩하지 않고 조회 시점에 계산한다 (응답에는 내리지 않음)
+- 고를 수 있는 달(공통 달) = `ml_priority`·`ml_region`·`ml_explanation`에 공통으로 있는 달. 월 범위는 하드코딩하지 않고 조회 시점에 계산한다 (응답에는 내리지 않음). `plan_` 테이블은 공통 달 계산에 넣지 않는다 (plan이 없는 달은 9번만 `PLAN_NOT_FOUND`)
 - `month`를 골랐는데 공통 달에 없으면 **404 `SUITABILITY_NOT_READY`** (API 1~5, 7 공통, 한 메서드로 판단). 연간 조회는 이 규칙과 무관
-- 판단 순서: 연도 데이터가 아예 없음(`PERIOD_NOT_FOUND`) → 공통 달에 없는 월(`SUITABILITY_NOT_READY`) → 없는 지역(`REGION_NOT_FOUND`)
+- 판단 순서: 연도 데이터가 아예 없음(`PERIOD_NOT_FOUND`) → 공통 달에 없는 월(`SUITABILITY_NOT_READY`) → 없는 지역(`REGION_NOT_FOUND`). API 9는 지역 대신 그 기간 plan 행 없음(`PLAN_NOT_FOUND`)
 
 ### `period` (모든 API 공통)
 
@@ -60,6 +62,7 @@
 | `SUITABILITY_NOT_READY` | 404 | 요청한 달의 데이터가 없음(존재하지 않는 달). 메시지 "존재하지 않는 달입니다." |
 | `REGION_NOT_FOUND` | 404 | 연도 데이터는 있는데 regionCode가 없음 |
 | `RECOMMENDATION_NOT_FOUND` | 404 | `ml_explanation`에 그 지역 행이 없음 |
+| `PLAN_NOT_FOUND` | 404 | `plan_summary`에 그 기간 행이 없음 (API 9). 메시지 "통합 최적안 데이터가 없습니다." |
 | `ML_RUNNING` | 409 | ML 실행이 이미 돌고 있음 (API 8). 메시지 "이미 실행 중입니다." |
 | `ML_UNAVAILABLE` | 502 | ML 서버 연결 실패·타임아웃, ML 서버가 실행을 시작하지 못함 (API 8). 메시지 "ML 서버에 연결할 수 없습니다." |
 - `regionCode`: 행정동 코드 10자리 (`ml_*.region_cd` = `feat_*.dong_cd`), 예 `4146125000`
@@ -76,6 +79,7 @@
 | 7 | GET | `/api/regions/{regionCode}/recommendation` | 지역 상세 | O |
 | 8-1 | POST | `/api/ml/run` | (시연용) | body |
 | 8-2 | GET | `/api/ml/run/status` | (시연용) | X |
+| 9 | GET | `/api/plans` | 대시보드 (통합 최적안) | O |
 
 ---
 
@@ -516,3 +520,112 @@ Body (`application/json`)
 | 연결 실패, 타임아웃, 그 밖의 응답 | 502 `ML_UNAVAILABLE` |
 
 - 실행 기록은 FastAPI 메모리에만 있어 ML 서버를 다시 켜면 `NONE`이 된다
+
+---
+
+## 9. 통합 최적안 — `GET /api/plans`
+
+대시보드 '통합 최적안' 영역. 같은 예산으로 1안 효율형, 2안 형평형, 3안 균형형 중 어느 지역부터 투입할지 비교한다. 세 안을 한 번에 내리고, 카드를 누르면 프론트가 `plans[]`에서 그 안을 골라 투입 순서 표·예산 밖 줄과 지도·TOP 10 강조를 바꾼다 (추가 요청 없음, decisions D18).
+
+Query: `year`, `month`
+
+```json
+{
+  "period": { "year": 2025, "months": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "type": "YEAR_ALL" },
+  "plans": [
+    {
+      "plan": 3,
+      "name": "균형형",
+      "desc": "효율과 취약도를 함께 고려한 절충안",
+      "sortBasis": "효율 순위와 취약도 순위의 평균",
+      "budget": 711666667,
+      "totalCost": 610000000,
+      "budgetLeft": 101666667,
+      "includedCount": 5,
+      "skippedCount": 4,
+      "pop65Total": 24999,
+      "modeCounts": [
+        { "mode": "BUS", "name": "노선버스", "count": 0 },
+        { "mode": "DRT", "name": "똑버스", "count": 5 },
+        { "mode": "HAPPY_TAXI", "name": "행복택시", "count": 0 }
+      ],
+      "regions": [
+        {
+          "order": 1,
+          "rank": 1,
+          "regionCode": "4146125300",
+          "regionName": "모현읍",
+          "gu": "처인구",
+          "mode": "DRT",
+          "modeName": "똑버스",
+          "action": "똑버스 4대",
+          "cost": 122000000
+        }
+      ],
+      "skipped": [
+        {
+          "rank": 6,
+          "regionCode": "4146125900",
+          "regionName": "남사읍",
+          "gu": "처인구",
+          "mode": "DRT",
+          "modeName": "똑버스",
+          "action": "똑버스 4대",
+          "cost": 122000000,
+          "budgetLeftAtSkip": 101666667
+        }
+      ],
+      "byRegion": [
+        { "regionCode": "4146125300", "status": "INCLUDED", "mode": "DRT", "modeName": "똑버스" }
+      ]
+    }
+  ]
+}
+```
+
+(예시는 3안만, `regions`·`skipped`·`byRegion`도 1개씩. 실제로는 `plans` 3개, 2025 연간 3안은 `regions` 5개·`skipped` 4개·`byRegion` 38개)
+
+| 화면 | 필드 | 출처 |
+| --- | --- | --- |
+| 카드 (1안·2안·3안) | plan, name, desc, sortBasis | `plan_summary.plan`, `plan_nm`, `plan_desc`, `sort_basis` |
+| 예산 칩, 카드 "추정 비용 / 예산", 막대 | budget, totalCost, budgetLeft | `plan_summary.budget`, `total_cost`, `budget_left`. 막대 비율(totalCost ÷ budget)과 억 단위 변환은 프론트 |
+| 카드 "포함 지역" | includedCount, skippedCount | `n_included`, `n_skipped` |
+| (화면 여유분) | pop65Total | `pop65_total` (포함 지역의 65세 이상 인구 합) |
+| 카드 수단 칩 | modeCounts | `n_bus`, `n_drt`, `n_happy`. 항상 3개, 순서 BUS → DRT → HAPPY_TAXI, 0도 내림 (숨길지는 프론트) |
+| 투입 순서 표 | regions | `plan_region`에서 그 안, `is_included = 1`, `seq` 순 |
+| 예산 밖 줄 | skipped | `plan_region`에서 그 안, `status = '예산 밖'`, `plan_rank` 순 (여러 줄 가능) |
+| 지도·TOP 10 "통합 최적안" 토글 | byRegion | `plan_region`에서 그 안의 행정동 38개 전체(`후보 아님` 포함), `region_cd` 오름차순 |
+
+regions·skipped 항목
+
+| 필드 | 출처 |
+| --- | --- |
+| order | `seq` (투입 순서). regions만 |
+| rank | `plan_rank` (그 안의 정렬 기준 순위). 표의 "균형 1위"는 프론트가 안 번호로 앞말(효율·취약도·균형)을 붙인다 |
+| regionCode, regionName, gu | `region_cd`, `region_nm`, `gu` |
+| mode, modeName | `mode`, `mode_nm` |
+| action, cost | `action`(투입안 문구), `cost`(원) |
+| budgetLeftAtSkip | `budget_left_at_skip` (원). skipped만, "남은 예산 n억보다 커서 건너뜀"용 |
+
+byRegion 항목
+
+| 필드 | 출처 |
+| --- | --- |
+| regionCode | `region_cd` |
+| status | `status`. `포함` → `INCLUDED`, `예산 밖` → `SKIPPED`, `후보 아님` → `NOT_CANDIDATE`. 그 밖의 값은 500 `INTERNAL_ERROR` (서버 로그) |
+| mode, modeName | `mode`, `mode_nm` (DB 값 그대로, `DRT`·`BUS`·`KEEP` 등) |
+
+지도 표시 규칙 (색은 프론트가 칠하고, 서버는 값만 전달한다)
+
+- 지도는 38개 전부 그 안의 `byRegion`으로 칠하고, TOP 10 배지도 같은 값을 `regionCode`로 찾는다. API 1·2 응답은 바뀌지 않는다
+- `status`를 먼저 본다: `INCLUDED` → `mode` 색 / `NOT_CANDIDATE` + `mode = KEEP` → 현행 유지 / 나머지(`SKIPPED`, 그 밖의 `NOT_CANDIDATE`) → 미포함
+- `NOT_CANDIDATE` 행에도 `mode`에 `BUS`·`DRT` 값이 있으므로 `mode`만 보고 칠하면 안 된다
+
+- 조건: `plan_summary`는 `year = :year` + 월 `month = :month` / 연간 `month IS NULL`, `plan` 순. `plan_region`은 같은 기간 + `unit = 'dong'` (decisions D6)
+- `status = '후보 아님'` 행은 regions·skipped에는 넣지 않고 byRegion에만 넣는다
+- 금액은 모두 원 단위 정수, 변환·반올림하지 않는다
+- 예산은 안마다 `plans[].budget`으로 내린다 (지금은 세 안이 같은 값. 예산 칩은 프론트가 아무 안의 값이나 쓴다)
+- 문구(`desc`, `sortBasis`, `action`)는 수정하지 않고 그대로 전달한다
+- 내리지 않는 것: "단가 ±30%로 바꿔도 …" 줄(계산하지 않음, 화면에서 삭제), 하단 단가·출처 안내(프론트 고정 문구), 행정동 상세의 안별 한 줄(`line`)과 리 단위(`village`) 행 (이번 범위 제외)
+- `period`: 연간 `YEAR_ALL` + 공통 달 / 월 `MONTH` + `[month]` (1번과 같다)
+- 에러: 연도 데이터가 없으면 `PERIOD_NOT_FOUND`, 공통 달에 없는 월이면 `SUITABILITY_NOT_READY`, 그 기간 `plan_summary` 행이 없으면 `PLAN_NOT_FOUND`. plan 테이블은 공통 달 계산에 넣지 않는다

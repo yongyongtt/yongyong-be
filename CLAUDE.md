@@ -1,6 +1,6 @@
 # CLAUDE.md — 용인 교통 사각지대 진단 백엔드
 
-RULES_VERSION: R12  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 변경 이력"에 한 줄 남긴다)
+RULES_VERSION: R13  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 변경 이력"에 한 줄 남긴다)
 
 이 파일은 이 저장소에서 일하는 Claude가 매번 따라야 하는 규칙이다.
 규칙과 다른 방법이 더 낫다고 판단되면, 바로 바꾸지 말고 사용자에게 먼저 제안한다.
@@ -55,6 +55,7 @@ RULES_VERSION: R12  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 
 │  └─ converter   JSON 컬럼용 AttributeConverter (StringListConverter, OptionListConverter)
 ├─ yongin         yongin DB 읽기 전용 엔티티 + repository (테이블당 하나, 여러 기능이 같이 씀)
 │  ├─ entity      MlPriority, MlRegion, MlExplanation, MlModelInfo (@Subselect, 연간 = month 0),
+│  │              PlanSummary, PlanRegion (@Subselect, 연간 = month 0),
 │  │              FeatRegion, FeatRegionMonth, FeatCity, FeatCityMonth
 │  └─ repository  MlPriorityRepository ...
 ├─ dashboard      API 1, 2
@@ -62,6 +63,8 @@ RULES_VERSION: R12  (규칙을 바꾸면 버전을 올리고 맨 아래 "규칙 
 ├─ region         API 3, 4, 5, 6
 │  ├─ controller / service / dto
 ├─ recommendation API 7
+│  ├─ controller / service / dto
+├─ plan           API 9 (통합 최적안)
 │  ├─ controller / service / dto
 └─ ml             API 8 (yong_ml FastAPI 호출)
    ├─ controller / service / dto / client (MlClient, RestClient)
@@ -148,7 +151,7 @@ API 하나를 만들 때 아래 순서를 지킨다. 순서를 건너뛰지 않�
 3. **테스트 작성**: 8장 기준으로 테스트를 먼저 쓰고 실행해서 **실패하는 것을 확인**한다
 4. **사람 확인 지점**: 테스트 목록(무엇을 검증하는지)을 사용자에게 요약해서 보여주고, 확인을 받은 뒤 구현한다
 5. **구현**: 테스트가 통과할 때까지 구현한다. 테스트를 구현에 맞춰 고치지 않는다. 테스트가 틀렸다고 판단되면 이유를 말하고 사용자 확인 후 고친다
-6. **검증**: `./gradlew spotlessApply check` (포맷, ArchUnit, 전체 테스트) 통과
+6. **검증**: `./gradlew spotlessApply check` (포맷, 전체 테스트) 통과. 9장 3번 구조 규칙은 리뷰에서 직접 확인
 7. **기록·커밋**: `WORKLOG.md` 항목을 마무리하고(7장), 커밋한다
 
 브랜치: `feat/api-{번호}` (예: `feat/api-1`). main에 직접 커밋하지 않는다.
@@ -227,7 +230,7 @@ GitHub Actions `ci.yml`이 PR마다 아래를 돌리고, 하나라도 실패하�
 
 1. `spotlessCheck` — 포맷
 2. `test -PexcludeTags=db` — 단위·통합 테스트 (Testcontainers). seed가 필요한 `db` 태그 테스트는 제외 (decisions D11)
-3. ArchUnit 규칙 (test에 포함)
+3. 구조 규칙 — **ArchUnit 테스트는 아직 없다** (의존성만 있음). CI가 강제하지 않으므로 코드 작성·리뷰 때 아래를 직접 지킨다
    - controller → service → repository 방향만 허용 (controller는 `yongin` 패키지에 의존 금지). `ml.client`는 service에서만 사용 (controller 의존 금지)
    - `@RestController`의 public 메서드 반환 타입은 `ApiResponse`
    - `@Entity` 클래스는 `yongin.entity` 패키지에만 있고, `@Immutable`이 붙어 있어야 함
@@ -264,4 +267,5 @@ GitHub Actions `ci.yml`이 PR마다 아래를 돌리고, 하나라도 실패하�
 | 2026-11-07 | R9 | 앱은 `yongin`에 SELECT 전용 계정 하나로 접속, `yongin_app` 제거 | 사용자 결정 (배포 준비 중 `yongin_app`을 쓰는 엔티티·테이블이 없음을 확인), decisions D15 |
 | 2026-11-08 | R10 | 연간 = 서버 재계산(숫자 월 평균, 분류·문장 최근 달), NULL 행 미사용(`@SQLRestriction`), 정수 점수·재계산 순위, `SUITABILITY_NOT_READY`, 공통 `period`, seed 11/8 기준, 확인 SQL 반올림 | 사용자 결정 (11/8 DB에 테이블마다 다른 월별 행 추가), decisions D4·D7·D12 변경, D16 |
 | 2026-11-11 | R12 | 연간 = `ml_` 연간(NULL) 행, `ml_` 엔티티 4개는 `@Subselect`로 NULL을 month 0으로 읽음(`@Table` 예외), 월 평균·최근 달 계산 제거(순위·취약지역은 정수 점수 기준 유지), 연간 period는 모두 `YEAR_ALL` + 공통 달(`YEAR_LATEST` 미사용), seed·기준값 11/11 최종본 | 사용자 결정 (최종본 DB에 `ml_` 5개 테이블 모두 NULL 행, 월 평균·12월과 값이 다름), decisions D16 변경 |
+| 2026-11-12 | R13 | 2장에 `plan` 패키지(API 9)와 `PlanSummary`·`PlanRegion` 엔티티 추가, 9장 구조 규칙을 "ArchUnit 강제"에서 "테스트 없음, 직접 확인"으로, 6장 검증 문구에서 ArchUnit 제거 | 사용자 결정 (API 9 구현 중 2장에 패키지 없음, ArchUnit 규칙 테스트 파일 없음 확인), decisions D18 |
 | 2026-11-10 | R11 | API 8 범위 포함(ML 실행 요청·상태), `ml` 패키지·`client`, 에러코드 `ML_RUNNING`·`ML_UNAVAILABLE`, API 8 `period` 예외, ML 컨테이너 별도 계정, API 8 client 테스트 | 사용자 결정 (yong_ml FastAPI 연동), decisions D5·D15 변경, D17 |
