@@ -171,7 +171,7 @@ options 항목 구조 (DB 원문 키)
 ### feat_city_month — 시 평균 월별 (API 5, 6)
 `year`, `month`, `taxi_req`, `taxi_matched`, `taxi_match_rate`, `taxi_unmatched_rate`, `fp_avg`
 
-### plan_summary — 통합 최적안 안별 요약 (API 9)
+### plan_summary — 통합 최적안 안별 요약 (API 9-1)
 안 3개(1 효율형, 2 형평형, 3 균형형) × (연간 NULL 1행 + 월 12행) = 39행. `unit` 컬럼 없음 (행정동 기준)
 
 | 컬럼 | 타입 | 설명 |
@@ -183,25 +183,26 @@ options 항목 구조 (DB 원문 키)
 | n_included, n_candidates, n_skipped | bigint | 포함·후보·예산 밖 지역 수 (후보 = 포함 + 예산 밖) |
 | pop65_total | bigint | 포함 지역 65세 이상 인구 합 |
 | n_bus, n_drt, n_happy | bigint | 포함 지역의 수단별 개수 |
-| days | bigint | 운영 일수(61). 쓰지 않음 |
+| days | bigint | 운영 일수(61). 9-1 `days` |
 
-### plan_region — 통합 최적안 지역별 결과 (API 9)
+### plan_region — 통합 최적안 지역별 결과 (API 9-1, 9-2)
 dong 1,482행 + village 2,808행. API 9는 `unit = 'dong'`만 쓴다
 
 | 컬럼 | 타입 | 설명 |
 | --- | --- | --- |
 | year, month, plan, plan_nm | | 기간·안 |
-| unit, region_cd, region_nm, gu | text | 지역. `parent_cd`는 village만 값 있음. `region_cd`는 byRegion에도 씀 |
-| status | text | `포함` / `예산 밖` / `후보 아님`. byRegion에 씀 (`INCLUDED` / `SKIPPED` / `NOT_CANDIDATE`) |
+| unit, region_cd, region_nm, gu | text | 지역. `parent_cd`는 village만 값 있음. 9-1 regions·skipped, 9-2는 `region_cd`만 |
+| status | text | `포함` / `예산 밖` / `후보 아님` (`현행 유지` 값은 없음). 9-1 regions·skipped 구분, 9-2 `status`(`INCLUDED` / `SKIPPED` / `NOT_CANDIDATE`)와 `category` 계산 |
 | is_included | tinyint | `포함`이면 1 (status와 dong 전 행 일치 확인) |
 | seq | bigint | 투입 순서. `포함`만 값, 나머지 NULL |
 | plan_rank | bigint | 그 안의 정렬 기준 순위. `후보 아님`은 NULL |
-| mode, mode_nm | text | 수단 코드·이름 (`DRT`/똑버스, `BUS`/노선버스, `KEEP`/현행 유지). `후보 아님` 행에도 값이 있음. byRegion에 씀 (regions·skipped에는 `후보 아님` 행이 없음) |
+| mode, mode_nm | text | 수단 코드·이름 (`DRT`/똑버스, `BUS`/노선버스, `KEEP`/현행 유지). `후보 아님` 행에도 값이 있음. 9-1 regions·skipped에는 그대로 내리고, 9-2에는 내리지 않고 `category` 계산에만 씀 (`mode_nm`은 9-2에서 안 씀) |
 | action, cost | text, bigint | 투입안 문구, 비용(원). `후보 아님`은 NULL |
 | budget_left_at_skip | bigint | `예산 밖`만 값 (건너뛸 때 남은 예산) |
+| score_total | double | 9-1 regions·skipped `score` (정수 반올림, D12와 같은 방식) |
 | line | text | 행정동 상세용 안별 한 줄. 이번 범위에서 안 씀 |
 
-그 밖의 `units, cost_basis, vehicle_note, score_total, pop65, effect, eff_per_eok, rank_eff, rank_score, rank_balance, note`는 API 9에서 쓰지 않는다.
+그 밖의 `units, cost_basis, vehicle_note, pop65, effect, eff_per_eok, rank_eff, rank_score, rank_balance, note`는 API 9에서 쓰지 않는다.
 
 ## seed로 확인한 기준값 (11/11 최종본, 2025, dong)
 
@@ -233,7 +234,8 @@ dong 1,482행 + village 2,808행. API 9는 `unit = 'dong'`만 쓴다
 | 연간 3안 투입 순서 | 모현읍 → 이동읍 → 원삼면 → 포곡읍 → 양지면 (모두 똑버스 4대 · 122,000,000) | `SELECT seq, region_nm, action, cost FROM plan_region WHERE year=2025 AND month IS NULL AND plan=3 AND unit='dong' AND is_included=1 ORDER BY seq` |
 | 연간 3안 예산 밖 | 남사읍(6) · 동천동(7) · 백암면(8) · 동부동(9), 남은 예산 101,666,667 | 위 조건 `status='예산 밖' ORDER BY plan_rank` |
 | 연간 1안 투입 순서 | 모현읍 → 동천동 → 포곡읍 → 이동읍 → 남사읍 | 위와 같음, `plan=1` |
-| 연간 3안 byRegion | 38개: INCLUDED 5 / SKIPPED 4 / NOT_CANDIDATE 29 (mode KEEP 9, BUS 14, DRT 6) | `SELECT status, mode, COUNT(*) FROM plan_region WHERE year=2025 AND month IS NULL AND plan=3 AND unit='dong' GROUP BY status, mode` |
+| 연간 3안 9-2 지도 | 38개: category DRT 5 (모현읍·이동읍·원삼면·포곡읍·양지면) / SKIPPED 4 (남사읍·동천동·백암면·동부동) / KEEP 9 / NONE 20 (후보 아님 BUS 14·DRT 6) / BUS 0 / HAPPY_TAXI 0, status INCLUDED 5 / SKIPPED 4 / NOT_CANDIDATE 29 | `SELECT status, mode, COUNT(*) FROM plan_region WHERE year=2025 AND month IS NULL AND plan=3 AND unit='dong' GROUP BY status, mode` |
+| 연간 days / 3안 score | 세 안 모두 days 61 (39행 모두 61) / 3안 투입 1번 모현읍 64.7 → 65, 예산 밖 남사읍 61.5 → 62 | `SELECT plan, days FROM plan_summary WHERE year=2025 AND month IS NULL`, `SELECT region_nm, status, score_total FROM plan_region WHERE year=2025 AND month IS NULL AND plan=3 AND unit='dong' AND status<>'후보 아님'` |
 | 키 중복 | (year, month, plan, unit, region_cd) 4,290행 중복 0 | `SELECT COUNT(*), COUNT(DISTINCT year, COALESCE(month,0), plan, unit, region_cd) FROM plan_region` |
 
 확인 사실 (12일자 DB, 2025, dong, 덤프에서 전 기간·전 안 대조)

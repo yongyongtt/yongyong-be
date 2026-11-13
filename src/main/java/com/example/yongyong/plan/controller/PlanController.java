@@ -2,6 +2,7 @@ package com.example.yongyong.plan.controller;
 
 import com.example.yongyong.common.query.PeriodQuery;
 import com.example.yongyong.common.response.ApiResponse;
+import com.example.yongyong.plan.dto.PlanMapResponse;
 import com.example.yongyong.plan.dto.PlanResponse;
 import com.example.yongyong.plan.service.PlanService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -25,5 +26,11 @@ public class PlanController {
   @GetMapping
   public ApiResponse<PlanResponse> getPlans(@Valid @ParameterObject PeriodQuery query) {
     return ApiResponse.ok(planService.getPlans(query));
+  }
+
+  @Operation(summary = "통합 최적안 지도 (1·2·3안별 행정동 38개 범례, 지도 색·TOP 10 배지용)")
+  @GetMapping("/map")
+  public ApiResponse<PlanMapResponse> getPlanMap(@Valid @ParameterObject PeriodQuery query) {
+    return ApiResponse.ok(planService.getPlanMap(query));
   }
 }

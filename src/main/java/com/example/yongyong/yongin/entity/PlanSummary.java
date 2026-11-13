@@ -11,7 +11,8 @@ import org.hibernate.annotations.Subselect;
 @Immutable
 @Subselect(
     "select year, coalesce(month, 0) as month, plan, plan_nm, plan_desc, sort_basis, budget,"
-        + " total_cost, budget_left, n_included, n_skipped, pop65_total, n_bus, n_drt, n_happy"
+        + " total_cost, budget_left, n_included, n_skipped, pop65_total, n_bus, n_drt, n_happy,"
+        + " days"
         + " from yongin.plan_summary")
 @IdClass(PlanSummary.Id.class)
 @Getter
@@ -34,4 +35,5 @@ public class PlanSummary {
   private Integer nBus;
   private Integer nDrt;
   private Integer nHappy;
+  private Integer days;
 }

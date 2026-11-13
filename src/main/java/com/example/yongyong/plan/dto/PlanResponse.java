@@ -11,6 +11,7 @@ public record PlanResponse(PeriodResponse period, List<Plan> plans) {
       String desc,
       String sortBasis,
       Long budget,
+      Integer days,
       Long totalCost,
       Long budgetLeft,
       Integer includedCount,
@@ -18,8 +19,7 @@ public record PlanResponse(PeriodResponse period, List<Plan> plans) {
       Integer pop65Total,
       List<ModeCount> modeCounts,
       List<Region> regions,
-      List<Skipped> skipped,
-      List<ByRegion> byRegion) {}
+      List<Skipped> skipped) {}
 
   public record ModeCount(String mode, String name, Integer count) {}
 
@@ -29,6 +29,7 @@ public record PlanResponse(PeriodResponse period, List<Plan> plans) {
       String regionCode,
       String regionName,
       String gu,
+      Integer score,
       String mode,
       String modeName,
       String action,
@@ -39,12 +40,10 @@ public record PlanResponse(PeriodResponse period, List<Plan> plans) {
       String regionCode,
       String regionName,
       String gu,
+      Integer score,
       String mode,
       String modeName,
       String action,
       Long cost,
       Long budgetLeftAtSkip) {}
-
-  // status: INCLUDED / SKIPPED / NOT_CANDIDATE
-  public record ByRegion(String regionCode, String status, String mode, String modeName) {}
 }

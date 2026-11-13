@@ -1,5 +1,6 @@
 package com.example.yongyong.plan.controller;
 
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -10,6 +11,7 @@ import com.example.yongyong.common.exception.BusinessException;
 import com.example.yongyong.common.exception.ErrorCode;
 import com.example.yongyong.common.query.PeriodQuery;
 import com.example.yongyong.common.response.PeriodResponse;
+import com.example.yongyong.plan.dto.PlanMapResponse;
 import com.example.yongyong.plan.dto.PlanResponse;
 import com.example.yongyong.plan.service.PlanService;
 import java.util.List;
@@ -27,6 +29,7 @@ import org.springframework.test.web.servlet.MockMvc;
 class PlanControllerTest {
 
   private static final String URL = "/api/plans";
+  private static final String MAP_URL = "/api/plans/map";
 
   @Autowired private MockMvc mockMvc;
   @MockitoBean private PlanService planService;
@@ -45,6 +48,7 @@ class PlanControllerTest {
                         "효율과 취약도를 함께 고려한 절충안",
                         "효율 순위와 취약도 순위의 평균",
                         711666667L,
+                        61,
                         610000000L,
                         101666667L,
                         5,
@@ -61,6 +65,7 @@ class PlanControllerTest {
                                 "4146125300",
                                 "모현읍",
                                 "처인구",
+                                65,
                                 "DRT",
                                 "똑버스",
                                 "똑버스 4대",
@@ -71,13 +76,12 @@ class PlanControllerTest {
                                 "4146125900",
                                 "남사읍",
                                 "처인구",
+                                62,
                                 "DRT",
                                 "똑버스",
                                 "똑버스 4대",
                                 122000000L,
-                                101666667L)),
-                        List.of(
-                            new PlanResponse.ByRegion("4146125300", "INCLUDED", "DRT", "똑버스"))))));
+                                101666667L))))));
 
     mockMvc
         .perform(get(URL).param("year", "2025"))
@@ -92,6 +96,7 @@ class PlanControllerTest {
         .andExpect(jsonPath("$.data.plans[0].desc").value("효율과 취약도를 함께 고려한 절충안"))
         .andExpect(jsonPath("$.data.plans[0].sortBasis").value("효율 순위와 취약도 순위의 평균"))
         .andExpect(jsonPath("$.data.plans[0].budget").value(711666667))
+        .andExpect(jsonPath("$.data.plans[0].days").value(61))
         .andExpect(jsonPath("$.data.plans[0].totalCost").value(610000000))
         .andExpect(jsonPath("$.data.plans[0].budgetLeft").value(101666667))
         .andExpect(jsonPath("$.data.plans[0].includedCount").value(5))
@@ -105,17 +110,68 @@ class PlanControllerTest {
         .andExpect(jsonPath("$.data.plans[0].regions[0].regionCode").value("4146125300"))
         .andExpect(jsonPath("$.data.plans[0].regions[0].regionName").value("모현읍"))
         .andExpect(jsonPath("$.data.plans[0].regions[0].gu").value("처인구"))
+        .andExpect(jsonPath("$.data.plans[0].regions[0].score").value(65))
         .andExpect(jsonPath("$.data.plans[0].regions[0].mode").value("DRT"))
         .andExpect(jsonPath("$.data.plans[0].regions[0].modeName").value("똑버스"))
         .andExpect(jsonPath("$.data.plans[0].regions[0].action").value("똑버스 4대"))
         .andExpect(jsonPath("$.data.plans[0].regions[0].cost").value(122000000))
         .andExpect(jsonPath("$.data.plans[0].skipped[0].rank").value(6))
         .andExpect(jsonPath("$.data.plans[0].skipped[0].regionName").value("남사읍"))
+        .andExpect(jsonPath("$.data.plans[0].skipped[0].score").value(62))
         .andExpect(jsonPath("$.data.plans[0].skipped[0].budgetLeftAtSkip").value(101666667))
-        .andExpect(jsonPath("$.data.plans[0].byRegion[0].regionCode").value("4146125300"))
-        .andExpect(jsonPath("$.data.plans[0].byRegion[0].status").value("INCLUDED"))
-        .andExpect(jsonPath("$.data.plans[0].byRegion[0].mode").value("DRT"))
-        .andExpect(jsonPath("$.data.plans[0].byRegion[0].modeName").value("똑버스"));
+        .andExpect(jsonPath("$.data.plans[0].byRegion").doesNotExist());
+  }
+
+  @Test
+  @DisplayName("통합 최적안 지도를 ApiResponse로 내리고 필드명이 명세와 같다")
+  void returnsPlanMap() throws Exception {
+    given(planService.getPlanMap(new PeriodQuery(2025, null)))
+        .willReturn(
+            new PlanMapResponse(
+                new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL),
+                List.of(
+                    new PlanMapResponse.Plan(
+                        1,
+                        List.of(
+                            new PlanMapResponse.Region("4146125300", "DRT", "똑버스", "INCLUDED"))))));
+
+    mockMvc
+        .perform(get(MAP_URL).param("year", "2025"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.error").value((Object) null))
+        .andExpect(jsonPath("$.data.period.type").value("YEAR_ALL"))
+        .andExpect(jsonPath("$.data.plans[0].keys()").value(containsInAnyOrder("plan", "regions")))
+        .andExpect(jsonPath("$.data.plans[0].plan").value(1))
+        .andExpect(
+            jsonPath("$.data.plans[0].regions[0].keys()")
+                .value(containsInAnyOrder("regionCode", "category", "categoryName", "status")))
+        .andExpect(jsonPath("$.data.plans[0].regions[0].regionCode").value("4146125300"))
+        .andExpect(jsonPath("$.data.plans[0].regions[0].category").value("DRT"))
+        .andExpect(jsonPath("$.data.plans[0].regions[0].categoryName").value("똑버스"))
+        .andExpect(jsonPath("$.data.plans[0].regions[0].status").value("INCLUDED"));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"0", "13"})
+  @DisplayName("지도도 month가 1~12 밖이면 400 INVALID_REQUEST를 내린다")
+  void mapInvalidMonth(String month) throws Exception {
+    mockMvc
+        .perform(get(MAP_URL).param("year", "2025").param("month", month))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+  }
+
+  @ParameterizedTest
+  @EnumSource(names = {"PERIOD_NOT_FOUND", "SUITABILITY_NOT_READY", "PLAN_NOT_FOUND"})
+  @DisplayName("지도 서비스가 기간·달·plan 없음 예외를 던지면 404와 그 에러코드를 내린다")
+  void mapNotFound(ErrorCode errorCode) throws Exception {
+    given(planService.getPlanMap(any())).willThrow(new BusinessException(errorCode));
+
+    mockMvc
+        .perform(get(MAP_URL).param("year", "2025").param("month", "7"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value(errorCode.name()));
   }
 
   @ParameterizedTest

@@ -10,6 +10,7 @@ import com.example.yongyong.common.exception.ErrorCode;
 import com.example.yongyong.common.query.PeriodQuery;
 import com.example.yongyong.common.query.PeriodService;
 import com.example.yongyong.common.response.PeriodResponse;
+import com.example.yongyong.plan.dto.PlanMapResponse;
 import com.example.yongyong.plan.dto.PlanResponse;
 import com.example.yongyong.yongin.entity.PlanRegion;
 import com.example.yongyong.yongin.entity.PlanSummary;
@@ -36,7 +37,7 @@ class PlanServiceTest {
   @InjectMocks private PlanService planService;
 
   @Test
-  @DisplayName("연간이면 month 0 행으로 안을 plan 순으로 내리고, 투입은 seq 순·예산 밖은 plan_rank 순, 후보 아님은 뺀다")
+  @DisplayName("연간이면 month 0 행으로 안을 plan 순으로 내리고 days를 담는다. 투입은 seq 순·예산 밖은 plan_rank 순, 후보 아님은 뺀다")
   void annual() {
     given(periodService.availableMonths(2025)).willReturn(List.of(1, 2, 3));
     given(planSummaryRepository.findByYearAndMonth(2025, 0))
@@ -61,6 +62,7 @@ class PlanServiceTest {
     assertThat(balanced.desc()).isEqualTo("균형형 설명");
     assertThat(balanced.sortBasis()).isEqualTo("균형형 기준");
     assertThat(balanced.budget()).isEqualTo(711666667L);
+    assertThat(balanced.days()).isEqualTo(61);
     assertThat(balanced.totalCost()).isEqualTo(610000000L);
     assertThat(balanced.budgetLeft()).isEqualTo(101666667L);
     assertThat(balanced.includedCount()).isEqualTo(5);
@@ -68,60 +70,135 @@ class PlanServiceTest {
     assertThat(balanced.pop65Total()).isEqualTo(24999);
     assertThat(balanced.regions())
         .containsExactly(
-            new PlanResponse.Region(1, 1, "A", "A동", "처인구", "DRT", "똑버스", "똑버스 4대", 122000000L),
-            new PlanResponse.Region(2, 2, "B", "B동", "처인구", "DRT", "똑버스", "똑버스 4대", 122000000L));
+            new PlanResponse.Region(1, 1, "A", "A동", "처인구", 60, "DRT", "똑버스", "똑버스 4대", 122000000L),
+            new PlanResponse.Region(
+                2, 2, "B", "B동", "처인구", 60, "DRT", "똑버스", "똑버스 4대", 122000000L));
     assertThat(balanced.skipped())
         .containsExactly(
-            new PlanResponse.Skipped(6, "C", "C동", "처인구", "DRT", "똑버스", "똑버스 4대", 122000000L, 100L),
             new PlanResponse.Skipped(
-                7, "D", "D동", "처인구", "DRT", "똑버스", "똑버스 4대", 122000000L, 100L));
+                6, "C", "C동", "처인구", 60, "DRT", "똑버스", "똑버스 4대", 122000000L, 100L),
+            new PlanResponse.Skipped(
+                7, "D", "D동", "처인구", 60, "DRT", "똑버스", "똑버스 4대", 122000000L, 100L));
     assertThat(response.plans().getFirst().regions())
         .extracting(PlanResponse.Region::regionCode)
         .containsExactly("E");
   }
 
   @Test
-  @DisplayName(
-      "byRegion은 그 안의 행 전체(후보 아님 포함)를 regionCode 순으로 내리고 status를 영문 코드로, mode는 DB 값 그대로 둔다")
-  void byRegion() {
+  @DisplayName("regions·skipped의 score는 score_total을 정수로 반올림한다 (64.7 → 65, 61.5 → 62)")
+  void score() {
     given(periodService.availableMonths(2025)).willReturn(List.of(1));
     given(planSummaryRepository.findByYearAndMonth(2025, 0))
-        .willReturn(List.of(summary(3, "균형형", 0, 2, 0)));
-    PlanRegion keep = region(3, "B", "후보 아님", false, null, null, null);
-    ReflectionTestUtils.setField(keep, "mode", "KEEP");
-    ReflectionTestUtils.setField(keep, "modeNm", "현행 유지");
-    PlanRegion bus = region(3, "D", "후보 아님", false, null, null, null);
-    ReflectionTestUtils.setField(bus, "mode", "BUS");
-    ReflectionTestUtils.setField(bus, "modeNm", "노선버스");
+        .willReturn(List.of(summary(3, "균형형", 0, 1, 0)));
     given(planRegionRepository.findByYearAndMonthAndUnit(2025, 0, "dong"))
         .willReturn(
             List.of(
-                region(3, "C", "예산 밖", false, null, 3, 100L),
-                keep,
-                region(3, "E", "포함", true, 2, 2, null),
-                bus,
-                region(3, "A", "포함", true, 1, 1, null)));
+                withScore(region(3, "A", "포함", true, 1, 1, null), 64.7),
+                withScore(region(3, "B", "예산 밖", false, null, 6, 100L), 61.5)));
 
-    assertThat(planService.getPlans(ANNUAL).plans().getFirst().byRegion())
-        .containsExactly(
-            new PlanResponse.ByRegion("A", "INCLUDED", "DRT", "똑버스"),
-            new PlanResponse.ByRegion("B", "NOT_CANDIDATE", "KEEP", "현행 유지"),
-            new PlanResponse.ByRegion("C", "SKIPPED", "DRT", "똑버스"),
-            new PlanResponse.ByRegion("D", "NOT_CANDIDATE", "BUS", "노선버스"),
-            new PlanResponse.ByRegion("E", "INCLUDED", "DRT", "똑버스"));
+    PlanResponse.Plan plan = planService.getPlans(ANNUAL).plans().getFirst();
+
+    assertThat(plan.regions()).extracting(PlanResponse.Region::score).containsExactly(65);
+    assertThat(plan.skipped()).extracting(PlanResponse.Skipped::score).containsExactly(62);
   }
 
   @Test
-  @DisplayName("plan_region status가 포함·예산 밖·후보 아님 외의 값이면 예외를 던져 500으로 처리되게 한다")
-  void unknownStatus() {
-    given(planSummaryRepository.findByYearAndMonth(2025, 7))
-        .willReturn(List.of(summary(1, "효율형", 0, 5, 0)));
+  @DisplayName("지도는 안마다 그 안의 행 전체를 regionCode 순으로 내리고, status를 먼저 본 뒤 mode로 category 6종을 계산한다")
+  void mapCategories() {
+    given(periodService.availableMonths(2025)).willReturn(List.of(1, 2));
+    given(planRegionRepository.findByYearAndMonthAndUnit(2025, 0, "dong"))
+        .willReturn(
+            List.of(
+                withMode(region(3, "G", "예산 밖", false, null, 4, 100L), "DRT"),
+                withMode(region(3, "D", "후보 아님", false, null, null, null), "KEEP"),
+                withMode(region(3, "B", "포함", true, 2, 2, null), "BUS"),
+                withMode(region(3, "F", "후보 아님", false, null, null, null), "DRT"),
+                withMode(region(1, "Y", "포함", true, 1, 1, null), "DRT"),
+                withMode(region(3, "C", "포함", true, 3, 3, null), "HAPPY_TAXI"),
+                withMode(region(3, "E", "후보 아님", false, null, null, null), "BUS"),
+                withMode(region(1, "X", "후보 아님", false, null, null, null), "KEEP"),
+                withMode(region(3, "A", "포함", true, 1, 1, null), "DRT")));
+
+    PlanMapResponse response = planService.getPlanMap(ANNUAL);
+
+    assertThat(response.period())
+        .isEqualTo(new PeriodResponse(2025, List.of(1, 2), PeriodResponse.Type.YEAR_ALL));
+    assertThat(response.plans()).extracting(PlanMapResponse.Plan::plan).containsExactly(1, 3);
+    assertThat(response.plans().getFirst().regions())
+        .containsExactly(
+            new PlanMapResponse.Region("X", "KEEP", "현행 유지", "NOT_CANDIDATE"),
+            new PlanMapResponse.Region("Y", "DRT", "똑버스", "INCLUDED"));
+    assertThat(response.plans().get(1).regions())
+        .containsExactly(
+            new PlanMapResponse.Region("A", "DRT", "똑버스", "INCLUDED"),
+            new PlanMapResponse.Region("B", "BUS", "노선버스", "INCLUDED"),
+            new PlanMapResponse.Region("C", "HAPPY_TAXI", "행복택시", "INCLUDED"),
+            new PlanMapResponse.Region("D", "KEEP", "현행 유지", "NOT_CANDIDATE"),
+            new PlanMapResponse.Region("E", "NONE", "기타 미포함", "NOT_CANDIDATE"),
+            new PlanMapResponse.Region("F", "NONE", "기타 미포함", "NOT_CANDIDATE"),
+            new PlanMapResponse.Region("G", "SKIPPED", "예산 밖", "SKIPPED"));
+  }
+
+  @Test
+  @DisplayName("지도에서 월을 고르면 그 달 행과 MONTH period를 내린다")
+  void mapMonthly() {
+    given(planRegionRepository.findByYearAndMonthAndUnit(2025, 7, "dong"))
+        .willReturn(List.of(region(2, "A", "예산 밖", false, null, 6, 100L)));
+
+    PlanMapResponse response = planService.getPlanMap(JULY);
+
+    assertThat(response.period())
+        .isEqualTo(new PeriodResponse(2025, List.of(7), PeriodResponse.Type.MONTH));
+    assertThat(response.plans()).extracting(PlanMapResponse.Plan::plan).containsExactly(2);
+  }
+
+  @Test
+  @DisplayName("지도에서 plan_region status가 포함·예산 밖·후보 아님 외의 값이면 예외를 던져 500으로 처리되게 한다")
+  void mapUnknownStatus() {
     given(planRegionRepository.findByYearAndMonthAndUnit(2025, 7, "dong"))
         .willReturn(List.of(region(1, "A", "보류", false, null, null, null)));
 
-    assertThatThrownBy(() -> planService.getPlans(JULY))
+    assertThatThrownBy(() -> planService.getPlanMap(JULY))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("보류");
+  }
+
+  @Test
+  @DisplayName("지도에서 포함 행의 mode가 BUS·DRT·HAPPY_TAXI가 아니면 예외를 던져 500으로 처리되게 한다")
+  void mapUnknownIncludedMode() {
+    given(planRegionRepository.findByYearAndMonthAndUnit(2025, 7, "dong"))
+        .willReturn(List.of(withMode(region(1, "A", "포함", true, 1, 1, null), "KEEP")));
+
+    assertThatThrownBy(() -> planService.getPlanMap(JULY))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("KEEP");
+  }
+
+  @Test
+  @DisplayName("지도에서 그 기간 plan_region 행이 없으면 PLAN_NOT_FOUND를 던진다")
+  void mapPlanNotFound() {
+    given(planRegionRepository.findByYearAndMonthAndUnit(2025, 7, "dong")).willReturn(List.of());
+
+    assertThatThrownBy(() -> planService.getPlanMap(JULY))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.PLAN_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("지도도 연도 데이터가 없으면 PERIOD_NOT_FOUND, 공통 달에 없는 월이면 SUITABILITY_NOT_READY를 던진다")
+  void mapPeriodErrors() {
+    given(periodService.availableMonths(2024)).willReturn(List.of());
+    willThrow(new BusinessException(ErrorCode.SUITABILITY_NOT_READY))
+        .given(periodService)
+        .checkMonth(JULY);
+
+    assertThatThrownBy(() -> planService.getPlanMap(new PeriodQuery(2024, null)))
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.PERIOD_NOT_FOUND);
+    assertThatThrownBy(() -> planService.getPlanMap(JULY))
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.SUITABILITY_NOT_READY);
   }
 
   @Test
@@ -202,7 +279,18 @@ class PlanServiceTest {
     ReflectionTestUtils.setField(summary, "nBus", bus);
     ReflectionTestUtils.setField(summary, "nDrt", drt);
     ReflectionTestUtils.setField(summary, "nHappy", happy);
+    ReflectionTestUtils.setField(summary, "days", 61);
     return summary;
+  }
+
+  private PlanRegion withScore(PlanRegion region, double score) {
+    ReflectionTestUtils.setField(region, "scoreTotal", score);
+    return region;
+  }
+
+  private PlanRegion withMode(PlanRegion region, String mode) {
+    ReflectionTestUtils.setField(region, "mode", mode);
+    return region;
   }
 
   private PlanRegion region(
@@ -227,6 +315,7 @@ class PlanServiceTest {
     ReflectionTestUtils.setField(region, "action", "똑버스 4대");
     ReflectionTestUtils.setField(region, "cost", 122000000L);
     ReflectionTestUtils.setField(region, "budgetLeftAtSkip", budgetLeftAtSkip);
+    ReflectionTestUtils.setField(region, "scoreTotal", 60.3);
     return region;
   }
 }

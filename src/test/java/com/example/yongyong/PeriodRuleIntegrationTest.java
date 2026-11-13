@@ -37,7 +37,8 @@ class PeriodRuleIntegrationTest extends MariaDbTestSupport {
         "/api/regions/" + POGOK,
         "/api/regions/" + POGOK + "/comparison",
         "/api/regions/" + POGOK + "/recommendation",
-        "/api/plans"
+        "/api/plans",
+        "/api/plans/map"
       })
   @DisplayName("공통 달(1~12)의 7월·12월과 연간은 200이다")
   void monthRule(String url) throws Exception {

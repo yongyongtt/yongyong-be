@@ -11,7 +11,8 @@ import org.hibernate.annotations.Subselect;
 @Immutable
 @Subselect(
     "select year, coalesce(month, 0) as month, plan, unit, region_cd, region_nm, gu, status,"
-        + " is_included, seq, plan_rank, mode, mode_nm, action, cost, budget_left_at_skip"
+        + " is_included, seq, plan_rank, mode, mode_nm, action, cost, budget_left_at_skip,"
+        + " score_total"
         + " from yongin.plan_region")
 @IdClass(PlanRegion.Id.class)
 @Getter
@@ -35,4 +36,5 @@ public class PlanRegion {
   private String action;
   private Long cost;
   private Long budgetLeftAtSkip;
+  private Double scoreTotal;
 }

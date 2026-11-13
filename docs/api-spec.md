@@ -7,6 +7,8 @@
 2026-11-11: 최종본 DB 반영으로 연간 = `ml_` 테이블의 연간(month NULL) 행, 연간 `period`·`typePeriod`는 모두 `YEAR_ALL` (decisions D16 변경). 노션에도 반영 필요.
 2026-11-12: 12일자 DB에 `plan_summary`·`plan_region` 추가로 9번 통합 최적안(`GET /api/plans`) 추가, 에러 `PLAN_NOT_FOUND` 추가 (decisions D18). 노션에도 반영 필요.
 2026-11-12: 9번 `plans[].byRegion` 추가 (지도·TOP 10 통합 최적안 토글용, 행정동 38개 전체, decisions D18 변경). 노션에도 반영 필요.
+2026-11-12: 9번 `byRegion` 항목을 `{ regionCode, status, mode, modeName }` → `{ regionCode, category, categoryName, status }`로 변경. 범례 category는 서버가 계산 (decisions D18 변경). 노션에도 반영 필요.
+2026-11-13: 9번을 9-1 `GET /api/plans`(카드·표, `byRegion` 제거, `days`·`score` 추가)와 9-2 `GET /api/plans/map`(지도·TOP 10 배지, category 6종)으로 나눔 (decisions D18 변경). 노션에도 반영 필요.
 
 ## 공통
 
@@ -62,7 +64,7 @@
 | `SUITABILITY_NOT_READY` | 404 | 요청한 달의 데이터가 없음(존재하지 않는 달). 메시지 "존재하지 않는 달입니다." |
 | `REGION_NOT_FOUND` | 404 | 연도 데이터는 있는데 regionCode가 없음 |
 | `RECOMMENDATION_NOT_FOUND` | 404 | `ml_explanation`에 그 지역 행이 없음 |
-| `PLAN_NOT_FOUND` | 404 | `plan_summary`에 그 기간 행이 없음 (API 9). 메시지 "통합 최적안 데이터가 없습니다." |
+| `PLAN_NOT_FOUND` | 404 | 그 기간 plan 행이 없음 (9-1 `plan_summary`, 9-2 `plan_region`). 메시지 "통합 최적안 데이터가 없습니다." |
 | `ML_RUNNING` | 409 | ML 실행이 이미 돌고 있음 (API 8). 메시지 "이미 실행 중입니다." |
 | `ML_UNAVAILABLE` | 502 | ML 서버 연결 실패·타임아웃, ML 서버가 실행을 시작하지 못함 (API 8). 메시지 "ML 서버에 연결할 수 없습니다." |
 - `regionCode`: 행정동 코드 10자리 (`ml_*.region_cd` = `feat_*.dong_cd`), 예 `4146125000`
@@ -79,7 +81,8 @@
 | 7 | GET | `/api/regions/{regionCode}/recommendation` | 지역 상세 | O |
 | 8-1 | POST | `/api/ml/run` | (시연용) | body |
 | 8-2 | GET | `/api/ml/run/status` | (시연용) | X |
-| 9 | GET | `/api/plans` | 대시보드 (통합 최적안) | O |
+| 9-1 | GET | `/api/plans` | 대시보드 (통합 최적안 카드·표) | O |
+| 9-2 | GET | `/api/plans/map` | 대시보드 (지도 통합 최적안 토글·TOP 10 배지) | O |
 
 ---
 
@@ -523,11 +526,23 @@ Body (`application/json`)
 
 ---
 
-## 9. 통합 최적안 — `GET /api/plans`
+## 9. 통합 최적안 (decisions D18)
 
-대시보드 '통합 최적안' 영역. 같은 예산으로 1안 효율형, 2안 형평형, 3안 균형형 중 어느 지역부터 투입할지 비교한다. 세 안을 한 번에 내리고, 카드를 누르면 프론트가 `plans[]`에서 그 안을 골라 투입 순서 표·예산 밖 줄과 지도·TOP 10 강조를 바꾼다 (추가 요청 없음, decisions D18).
+대시보드 '통합 최적안' 영역. 같은 예산으로 1안 효율형, 2안 형평형, 3안 균형형 중 어느 지역부터 투입할지 비교한다. 화면 영역별로 두 API로 나눈다.
 
-Query: `year`, `month`
+- 9-1 `GET /api/plans`: 카드, 예산 담기 막대, 투입 순서 표, 건너뛴 지역(예산 밖), 안별 비교
+- 9-2 `GET /api/plans/map`: 대시보드 지도 "통합 최적안" 토글 색, TOP 10 배지
+
+둘 다 세 안을 한 번에 내린다. 카드를 누르면 프론트가 두 응답의 `plans[]`에서 그 안을 골라 바꾼다 (재호출 없음).
+
+공통
+
+- Query: `year`, `month` (검증·`period`는 1번과 같다)
+- 조건: `plan_summary`는 `year = :year` + 월 `month = :month` / 연간 `month IS NULL`, `plan` 순. `plan_region`은 같은 기간 + `unit = 'dong'` (decisions D6). 9-1·9-2가 같은 조회를 쓴다
+- `period`: 연간 `YEAR_ALL` + 공통 달 / 월 `MONTH` + `[month]`
+- 에러 순서: 연도 데이터가 없으면 `PERIOD_NOT_FOUND` → 공통 달에 없는 월이면 `SUITABILITY_NOT_READY` → 그 기간 plan 행이 없으면 `PLAN_NOT_FOUND` (9-1은 `plan_summary`, 9-2는 `plan_region`). plan 테이블은 공통 달 계산에 넣지 않는다
+
+### 9-1. 통합 최적안 카드·표 — `GET /api/plans`
 
 ```json
 {
@@ -539,6 +554,7 @@ Query: `year`, `month`
       "desc": "효율과 취약도를 함께 고려한 절충안",
       "sortBasis": "효율 순위와 취약도 순위의 평균",
       "budget": 711666667,
+      "days": 61,
       "totalCost": 610000000,
       "budgetLeft": 101666667,
       "includedCount": 5,
@@ -556,6 +572,7 @@ Query: `year`, `month`
           "regionCode": "4146125300",
           "regionName": "모현읍",
           "gu": "처인구",
+          "score": 65,
           "mode": "DRT",
           "modeName": "똑버스",
           "action": "똑버스 4대",
@@ -568,33 +585,31 @@ Query: `year`, `month`
           "regionCode": "4146125900",
           "regionName": "남사읍",
           "gu": "처인구",
+          "score": 62,
           "mode": "DRT",
           "modeName": "똑버스",
           "action": "똑버스 4대",
           "cost": 122000000,
           "budgetLeftAtSkip": 101666667
         }
-      ],
-      "byRegion": [
-        { "regionCode": "4146125300", "status": "INCLUDED", "mode": "DRT", "modeName": "똑버스" }
       ]
     }
   ]
 }
 ```
 
-(예시는 3안만, `regions`·`skipped`·`byRegion`도 1개씩. 실제로는 `plans` 3개, 2025 연간 3안은 `regions` 5개·`skipped` 4개·`byRegion` 38개)
+(예시는 3안만, `regions`·`skipped`도 1개씩. 실제로는 `plans` 3개, 2025 연간 3안은 `regions` 5개·`skipped` 4개)
 
 | 화면 | 필드 | 출처 |
 | --- | --- | --- |
 | 카드 (1안·2안·3안) | plan, name, desc, sortBasis | `plan_summary.plan`, `plan_nm`, `plan_desc`, `sort_basis` |
 | 예산 칩, 카드 "추정 비용 / 예산", 막대 | budget, totalCost, budgetLeft | `plan_summary.budget`, `total_cost`, `budget_left`. 막대 비율(totalCost ÷ budget)과 억 단위 변환은 프론트 |
+| "2개월 예산" 표시 | days | `plan_summary.days` (운영 일수, 지금은 61). 개월 환산은 프론트 |
 | 카드 "포함 지역" | includedCount, skippedCount | `n_included`, `n_skipped` |
 | (화면 여유분) | pop65Total | `pop65_total` (포함 지역의 65세 이상 인구 합) |
 | 카드 수단 칩 | modeCounts | `n_bus`, `n_drt`, `n_happy`. 항상 3개, 순서 BUS → DRT → HAPPY_TAXI, 0도 내림 (숨길지는 프론트) |
 | 투입 순서 표 | regions | `plan_region`에서 그 안, `is_included = 1`, `seq` 순 |
 | 예산 밖 줄 | skipped | `plan_region`에서 그 안, `status = '예산 밖'`, `plan_rank` 순 (여러 줄 가능) |
-| 지도·TOP 10 "통합 최적안" 토글 | byRegion | `plan_region`에서 그 안의 행정동 38개 전체(`후보 아님` 포함), `region_cd` 오름차순 |
 
 regions·skipped 항목
 
@@ -603,29 +618,60 @@ regions·skipped 항목
 | order | `seq` (투입 순서). regions만 |
 | rank | `plan_rank` (그 안의 정렬 기준 순위). 표의 "균형 1위"는 프론트가 안 번호로 앞말(효율·취약도·균형)을 붙인다 |
 | regionCode, regionName, gu | `region_cd`, `region_nm`, `gu` |
+| score | `score_total`을 정수로 반올림 (decisions D12와 같은 방식, Java `Math.round`. 64.7 → 65, 61.5 → 62) |
 | mode, modeName | `mode`, `mode_nm` |
 | action, cost | `action`(투입안 문구), `cost`(원) |
 | budgetLeftAtSkip | `budget_left_at_skip` (원). skipped만, "남은 예산 n억보다 커서 건너뜀"용 |
 
-byRegion 항목
-
-| 필드 | 출처 |
-| --- | --- |
-| regionCode | `region_cd` |
-| status | `status`. `포함` → `INCLUDED`, `예산 밖` → `SKIPPED`, `후보 아님` → `NOT_CANDIDATE`. 그 밖의 값은 500 `INTERNAL_ERROR` (서버 로그) |
-| mode, modeName | `mode`, `mode_nm` (DB 값 그대로, `DRT`·`BUS`·`KEEP` 등) |
-
-지도 표시 규칙 (색은 프론트가 칠하고, 서버는 값만 전달한다)
-
-- 지도는 38개 전부 그 안의 `byRegion`으로 칠하고, TOP 10 배지도 같은 값을 `regionCode`로 찾는다. API 1·2 응답은 바뀌지 않는다
-- `status`를 먼저 본다: `INCLUDED` → `mode` 색 / `NOT_CANDIDATE` + `mode = KEEP` → 현행 유지 / 나머지(`SKIPPED`, 그 밖의 `NOT_CANDIDATE`) → 미포함
-- `NOT_CANDIDATE` 행에도 `mode`에 `BUS`·`DRT` 값이 있으므로 `mode`만 보고 칠하면 안 된다
-
-- 조건: `plan_summary`는 `year = :year` + 월 `month = :month` / 연간 `month IS NULL`, `plan` 순. `plan_region`은 같은 기간 + `unit = 'dong'` (decisions D6)
-- `status = '후보 아님'` 행은 regions·skipped에는 넣지 않고 byRegion에만 넣는다
+- `status = '후보 아님'` 행은 regions·skipped에 넣지 않는다 (지도는 9-2)
 - 금액은 모두 원 단위 정수, 변환·반올림하지 않는다
 - 예산은 안마다 `plans[].budget`으로 내린다 (지금은 세 안이 같은 값. 예산 칩은 프론트가 아무 안의 값이나 쓴다)
 - 문구(`desc`, `sortBasis`, `action`)는 수정하지 않고 그대로 전달한다
 - 내리지 않는 것: "단가 ±30%로 바꿔도 …" 줄(계산하지 않음, 화면에서 삭제), 하단 단가·출처 안내(프론트 고정 문구), 행정동 상세의 안별 한 줄(`line`)과 리 단위(`village`) 행 (이번 범위 제외)
-- `period`: 연간 `YEAR_ALL` + 공통 달 / 월 `MONTH` + `[month]` (1번과 같다)
-- 에러: 연도 데이터가 없으면 `PERIOD_NOT_FOUND`, 공통 달에 없는 월이면 `SUITABILITY_NOT_READY`, 그 기간 `plan_summary` 행이 없으면 `PLAN_NOT_FOUND`. plan 테이블은 공통 달 계산에 넣지 않는다
+
+### 9-2. 통합 최적안 지도 — `GET /api/plans/map`
+
+```json
+{
+  "period": { "year": 2025, "months": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "type": "YEAR_ALL" },
+  "plans": [
+    {
+      "plan": 1,
+      "regions": [
+        { "regionCode": "4146125300", "category": "DRT", "categoryName": "똑버스", "status": "INCLUDED" }
+      ]
+    }
+  ]
+}
+```
+
+(예시는 1안 1개 지역만. 실제로는 `plans` 3개(1·2·3안, plan 순), 안마다 `regions` 38개)
+
+| 필드 | 출처 |
+| --- | --- |
+| plans[].plan | `plan_region.plan`. 카드 전환 때 재호출하지 않도록 세 안 모두 내린다 |
+| regions | 그 안의 행정동 전체(`후보 아님` 포함, 38개), `region_cd` 오름차순 |
+| regionCode | `region_cd` |
+| category, categoryName | 서버가 `status`와 `mode`로 계산한 범례 값 (아래 표). `categoryName`은 고정 문구 (DB `mode_nm` 아님) |
+| status | `status`. `포함` → `INCLUDED`, `예산 밖` → `SKIPPED`, `후보 아님` → `NOT_CANDIDATE`. 그 밖의 값은 500 `INTERNAL_ERROR` (서버 로그) |
+
+category 계산 (`status`를 먼저 보고 `mode`를 본다)
+
+| category | categoryName | 조건 |
+| --- | --- | --- |
+| `BUS` | 노선버스 | `포함` + mode `BUS` |
+| `DRT` | 똑버스 | `포함` + mode `DRT` |
+| `HAPPY_TAXI` | 행복택시 | `포함` + mode `HAPPY_TAXI` |
+| `SKIPPED` | 예산 밖 | `예산 밖` |
+| `KEEP` | 현행 유지 | `후보 아님` + mode `KEEP` |
+| `NONE` | 기타 미포함 | `후보 아님` + 그 밖의 mode |
+
+- `포함`인데 mode가 `BUS`·`DRT`·`HAPPY_TAXI`가 아니면 500 `INTERNAL_ERROR` (서버 로그)
+- `후보 아님` 행에도 mode에 `BUS`·`DRT` 값이 있어 mode만 보면 잘못 칠한다. 그래서 서버가 `category`로 내린다. DB `status`에는 `현행 유지` 값이 없어 KEEP은 mode로 판단한다
+- DB `mode`·`mode_nm`은 내리지 않는다
+
+화면
+
+- 지도는 38개 전부 고른 안의 `regions`를 `category` 색으로 칠한다 (색 값은 프론트)
+- TOP 10 배지는 API 1 `top10`의 `regionCode`로 같은 안의 `regions`에서 값을 찾는다. API 1·2 응답은 바뀌지 않는다
+- 카드를 누르면 재호출 없이 `plans`에서 그 안을 고른다
