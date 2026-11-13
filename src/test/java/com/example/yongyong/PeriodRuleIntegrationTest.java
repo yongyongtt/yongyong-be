@@ -36,7 +36,9 @@ class PeriodRuleIntegrationTest extends MariaDbTestSupport {
         "/api/regions/" + POGOK + "/preview",
         "/api/regions/" + POGOK,
         "/api/regions/" + POGOK + "/comparison",
-        "/api/regions/" + POGOK + "/recommendation"
+        "/api/regions/" + POGOK + "/recommendation",
+        "/api/plans",
+        "/api/plans/map"
       })
   @DisplayName("공통 달(1~12)의 7월·12월과 연간은 200이다")
   void monthRule(String url) throws Exception {
@@ -45,6 +47,20 @@ class PeriodRuleIntegrationTest extends MariaDbTestSupport {
     mockMvc.perform(get(url).param("year", "2025").param("month", "7")).andExpect(status().isOk());
     mockMvc.perform(get(url).param("year", "2025").param("month", "12")).andExpect(status().isOk());
     mockMvc.perform(get(url).param("year", "2025")).andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("통합 최적안은 연도 데이터가 없으면 월을 골라도 SUITABILITY_NOT_READY보다 PERIOD_NOT_FOUND가 먼저다")
+  void planYearFirst() throws Exception {
+    // SELECT DISTINCT month FROM ml_priority WHERE year=2030; -- 0행 (seed는 2025만)
+    mockMvc
+        .perform(get("/api/plans").param("year", "2030").param("month", "3"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("PERIOD_NOT_FOUND"));
+    mockMvc
+        .perform(get("/api/plans").param("year", "2030"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("PERIOD_NOT_FOUND"));
   }
 
   @Test
