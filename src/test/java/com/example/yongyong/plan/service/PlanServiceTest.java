@@ -103,7 +103,9 @@ class PlanServiceTest {
   }
 
   @Test
-  @DisplayName("지도는 안마다 그 안의 행 전체를 regionCode 순으로 내리고, status를 먼저 본 뒤 mode로 category 6종을 계산한다")
+  @DisplayName(
+      "지도는 안마다 그 안의 행 전체를 regionCode 순으로 내리고, status를 먼저 본 뒤 mode로 category 6종을 계산한다."
+          + " 현행 유지는 후보 아님과 같이 NOT_CANDIDATE다")
   void mapCategories() {
     given(periodService.availableMonths(2025)).willReturn(List.of(1, 2));
     given(planRegionRepository.findByYearAndMonthAndUnit(2025, 0, "dong"))
@@ -117,7 +119,8 @@ class PlanServiceTest {
                 withMode(region(3, "C", "포함", true, 3, 3, null), "HAPPY_TAXI"),
                 withMode(region(3, "E", "후보 아님", false, null, null, null), "BUS"),
                 withMode(region(1, "X", "후보 아님", false, null, null, null), "KEEP"),
-                withMode(region(3, "A", "포함", true, 1, 1, null), "DRT")));
+                withMode(region(3, "A", "포함", true, 1, 1, null), "DRT"),
+                withMode(region(3, "H", "현행 유지", false, null, null, null), "KEEP")));
 
     PlanMapResponse response = planService.getPlanMap(ANNUAL);
 
@@ -136,7 +139,8 @@ class PlanServiceTest {
             new PlanMapResponse.Region("D", "KEEP", "현행 유지", "NOT_CANDIDATE"),
             new PlanMapResponse.Region("E", "NONE", "기타 미포함", "NOT_CANDIDATE"),
             new PlanMapResponse.Region("F", "NONE", "기타 미포함", "NOT_CANDIDATE"),
-            new PlanMapResponse.Region("G", "SKIPPED", "예산 밖", "SKIPPED"));
+            new PlanMapResponse.Region("G", "SKIPPED", "예산 밖", "SKIPPED"),
+            new PlanMapResponse.Region("H", "KEEP", "현행 유지", "NOT_CANDIDATE"));
   }
 
   @Test
@@ -153,7 +157,7 @@ class PlanServiceTest {
   }
 
   @Test
-  @DisplayName("지도에서 plan_region status가 포함·예산 밖·후보 아님 외의 값이면 예외를 던져 500으로 처리되게 한다")
+  @DisplayName("지도에서 plan_region status가 포함·예산 밖·후보 아님·현행 유지 외의 값이면 예외를 던져 500으로 처리되게 한다")
   void mapUnknownStatus() {
     given(planRegionRepository.findByYearAndMonthAndUnit(2025, 7, "dong"))
         .willReturn(List.of(region(1, "A", "보류", false, null, null, null)));

@@ -1,5 +1,6 @@
 package com.example.yongyong.plan;
 
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -41,10 +42,12 @@ class PlanIntegrationTest extends MariaDbTestSupport {
   }
 
   @Test
-  @DisplayName("2025 연간 9-2 3안은 38개이고 DRT 5·SKIPPED 4·KEEP 9·NONE 20·BUS 0·HAPPY_TAXI 0이다")
+  @DisplayName(
+      "2025 연간 9-2 3안은 38개이고 DRT 6·SKIPPED 8·KEEP 9·NONE 15·BUS 0·HAPPY_TAXI 0이다. 현행 유지(영덕2동)는 KEEP·NOT_CANDIDATE다")
   void annualMapPlan3() throws Exception {
     // SELECT status, mode, region_nm FROM plan_region WHERE year=2025 AND month IS NULL AND plan=3
-    //   AND unit='dong'; -- 포함 DRT 5, 예산 밖 4, 후보 아님 KEEP 9 · BUS 14 · DRT 6
+    //   AND unit='dong'; -- 포함 DRT 6, 예산 밖 8, 현행 유지 KEEP 1(4146351700 영덕2동),
+    //   후보 아님 KEEP 8 · BUS 14 · DRT 1
     String regions = PLAN3 + ".regions";
     mockMvc
         .perform(get("/api/plans/map").param("year", "2025"))
@@ -55,13 +58,31 @@ class PlanIntegrationTest extends MariaDbTestSupport {
             jsonPath(
                 regions + "[?(@.category == 'DRT')].regionCode",
                 containsInAnyOrder(
-                    "4146125300", "4146125600", "4146134000", "4146125000", "4146136000")))
+                    "4146125300",
+                    "4146125600",
+                    "4146125000",
+                    "4146556000",
+                    "4146136000",
+                    "4146356000")))
         .andExpect(
             jsonPath(
                 regions + "[?(@.category == 'SKIPPED')].regionCode",
-                containsInAnyOrder("4146125900", "4146556000", "4146135000", "4146154000")))
+                containsInAnyOrder(
+                    "4146125900",
+                    "4146134000",
+                    "4146135000",
+                    "4146154000",
+                    "4146553000",
+                    "4146354000",
+                    "4146353500",
+                    "4146152600")))
         .andExpect(jsonPath(regions + "[?(@.category == 'KEEP')]", hasSize(9)))
-        .andExpect(jsonPath(regions + "[?(@.category == 'NONE')]", hasSize(20)))
+        .andExpect(
+            jsonPath(regions + "[?(@.regionCode == '4146351700')].category", contains("KEEP")))
+        .andExpect(
+            jsonPath(
+                regions + "[?(@.regionCode == '4146351700')].status", contains("NOT_CANDIDATE")))
+        .andExpect(jsonPath(regions + "[?(@.category == 'NONE')]", hasSize(15)))
         .andExpect(jsonPath(regions + "[?(@.category == 'BUS')]", hasSize(0)))
         .andExpect(jsonPath(regions + "[?(@.category == 'HAPPY_TAXI')]", hasSize(0)));
   }

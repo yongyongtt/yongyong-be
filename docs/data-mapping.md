@@ -1,8 +1,9 @@
 # yongin DB 데이터 매핑 (API 1~7, 9용)
 
 기준 DB: 2026-11-11 최종본 (MariaDB 12.2, 이전 기준 11/8 적재본, `yongin_2026-11-05.sql`). Python(ML 팀원)이 적재하고 Spring은 읽기만 한다.
+2026-11-14: 11/14 덤프는 34개 테이블 중 `plan_summary`·`plan_region` 값만 바뀜 (체크섬 비교, 행 수·스키마 같음). `plan_region.status`에 `현행 유지` 추가. 나머지 32개는 11/12와 데이터까지 같아 위 기준값 그대로. Sequel Ace 덤프라 `CREATE DATABASE`·`USE`가 없고 첫 줄에 BOM이 있어 `tail -c +4 yongin.sql | mariadb ... yongin`으로 넣는다.
 2026-11-12: `yongin_2026-11-12.sql`에서 `plan_summary`(39행)·`plan_region`(4,290행) 2개만 추가됨. 기존 32개 테이블은 11/10 덤프와 스키마·데이터 모두 같다. Spring 계정 `yongyong`은 `yongin` DB 단위 SELECT 권한이라 새 테이블도 따로 GRANT 없이 읽힌다.
-테스트용 seed: `src/test/resources/db/seed-dong-2025.sql` — 11/11 최종본에서 아래 8개 테이블 + 11/12 plan 테이블 2개, 2025년 행정동(`unit = 'dong'`) 행만 (연간 NULL 행 포함). `mariadb-dump --compact --skip-extended-insert --no-autocommit yongin <테이블> --where="year=2025 AND unit='dong'"`(`ml_model_info`·`feat_region*`·`feat_city_month`·`plan_summary`는 `year=2025`만)로 만들고 `/*!`·`/*M!` 줄을 뺀다. git에 올리지 않는다 (decisions D11).
+테스트용 seed: `src/test/resources/db/seed-dong-2025.sql` — 11/14 DB에서 아래 8개 테이블 + plan 테이블 2개, 2025년 행정동(`unit = 'dong'`) 행만 (연간 NULL 행 포함). `mariadb-dump --compact --skip-extended-insert --no-autocommit yongin <테이블> --where="year=2025 AND unit='dong'"`(`ml_model_info`·`feat_region*`·`feat_city_month`·`plan_summary`는 `year=2025`만)로 만들고 `/*!`·`/*M!` 줄을 뺀다. git에 올리지 않는다 (decisions D11).
 
 ## 11/11 최종본 테이블별 월 (2025, dong)
 
@@ -192,7 +193,7 @@ dong 1,482행 + village 2,808행. API 9는 `unit = 'dong'`만 쓴다
 | --- | --- | --- |
 | year, month, plan, plan_nm | | 기간·안 |
 | unit, region_cd, region_nm, gu | text | 지역. `parent_cd`는 village만 값 있음. 9-1 regions·skipped, 9-2는 `region_cd`만 |
-| status | text | `포함` / `예산 밖` / `후보 아님` (`현행 유지` 값은 없음). 9-1 regions·skipped 구분, 9-2 `status`(`INCLUDED` / `SKIPPED` / `NOT_CANDIDATE`)와 `category` 계산 |
+| status | text | `포함` / `예산 밖` / `후보 아님` / `현행 유지` (11/14 추가, dong 21행 모두 mode `KEEP`). 9-1 regions·skipped 구분, 9-2 `status`(`INCLUDED` / `SKIPPED` / `NOT_CANDIDATE`, `현행 유지`도 `NOT_CANDIDATE`)와 `category` 계산 |
 | is_included | tinyint | `포함`이면 1 (status와 dong 전 행 일치 확인) |
 | seq | bigint | 투입 순서. `포함`만 값, 나머지 NULL |
 | plan_rank | bigint | 그 안의 정렬 기준 순위. `후보 아님`은 NULL |
@@ -224,18 +225,18 @@ dong 1,482행 + village 2,808행. API 9는 `unit = 'dong'`만 쓴다
 | 시 평균 정류장 / 고령 | 81.6 / 17.7% | `SELECT n_stops, elderly_ratio FROM feat_city WHERE year=2025 AND unit='dong'` |
 | 포곡읍 feat_region 연간 | 성사율 0.5337(월별 건수 가중 평균과 일치), 정류장 148, 고령 0.1984, 생활인구 10403.2 | `SELECT taxi_match_rate, n_stops, ratio65, fp_avg FROM feat_region WHERE dong_cd='4146125000'` |
 
-### 통합 최적안 기준값 (11/12, 2025, dong)
+### 통합 최적안 기준값 (11/14, 2025, dong)
 
 | 항목 | 값 | 확인 SQL |
 | --- | --- | --- |
-| 연간 예산 / 총비용 / 남은 예산 | 세 안 모두 711,666,667 / 610,000,000 / 101,666,667 (39행 모두 예산 같음) | `SELECT plan, budget, total_cost, budget_left FROM plan_summary WHERE year=2025 AND month IS NULL` |
-| 연간 포함 / 후보 / 예산 밖 | 세 안 모두 5 / 9 / 4, 수단 칩 버스 0·똑버스 5·행복택시 0 | 위 조건 `n_included, n_candidates, n_skipped, n_bus, n_drt, n_happy` |
-| 연간 65세 이상 합 | 1안 30,433 / 2안 21,848 / 3안 24,999 | 위 조건 `pop65_total` |
-| 연간 3안 투입 순서 | 모현읍 → 이동읍 → 원삼면 → 포곡읍 → 양지면 (모두 똑버스 4대 · 122,000,000) | `SELECT seq, region_nm, action, cost FROM plan_region WHERE year=2025 AND month IS NULL AND plan=3 AND unit='dong' AND is_included=1 ORDER BY seq` |
-| 연간 3안 예산 밖 | 남사읍(6) · 동천동(7) · 백암면(8) · 동부동(9), 남은 예산 101,666,667 | 위 조건 `status='예산 밖' ORDER BY plan_rank` |
-| 연간 1안 투입 순서 | 모현읍 → 동천동 → 포곡읍 → 이동읍 → 남사읍 | 위와 같음, `plan=1` |
-| 연간 3안 9-2 지도 | 38개: category DRT 5 (모현읍·이동읍·원삼면·포곡읍·양지면) / SKIPPED 4 (남사읍·동천동·백암면·동부동) / KEEP 9 / NONE 20 (후보 아님 BUS 14·DRT 6) / BUS 0 / HAPPY_TAXI 0, status INCLUDED 5 / SKIPPED 4 / NOT_CANDIDATE 29 | `SELECT status, mode, COUNT(*) FROM plan_region WHERE year=2025 AND month IS NULL AND plan=3 AND unit='dong' GROUP BY status, mode` |
-| 연간 days / 3안 score | 세 안 모두 days 61 (39행 모두 61) / 3안 투입 1번 모현읍 64.7 → 65, 예산 밖 남사읍 61.5 → 62 | `SELECT plan, days FROM plan_summary WHERE year=2025 AND month IS NULL`, `SELECT region_nm, status, score_total FROM plan_region WHERE year=2025 AND month IS NULL AND plan=3 AND unit='dong' AND status<>'후보 아님'` |
+| 연간 예산 / 총비용 / 남은 예산 | 1안 711,666,667 / 671,000,000 / 40,666,667, 2·3안 711,666,667 / 701,500,000 / 10,166,667 (39행 모두 예산 같음) | `SELECT plan, budget, total_cost, budget_left FROM plan_summary WHERE year=2025 AND month IS NULL` |
+| 연간 포함 / 후보 / 예산 밖 | 세 안 모두 6 / 14 / 8, 수단 칩 버스 0·똑버스 6·행복택시 0 | 위 조건 `n_included, n_candidates, n_skipped, n_bus, n_drt, n_happy` |
+| 연간 65세 이상 합 | 1안 41,553 / 2안 24,605 / 3안 39,118 | 위 조건 `pop65_total` |
+| 연간 3안 투입 순서 | 모현읍 → 이동읍 → 포곡읍 → 동천동 → 양지면 (똑버스 4대 · 122,000,000) → 구성동 (똑버스 3대 · 91,500,000) | `SELECT seq, region_nm, action, cost FROM plan_region WHERE year=2025 AND month IS NULL AND plan=3 AND unit='dong' AND is_included=1 ORDER BY seq` |
+| 연간 3안 예산 밖 | 남사읍(6, 남은 예산 101,666,667) · 원삼면(8) · 백암면(9) · 동부동(10) · 신봉동(11) · 기흥동(12) · 보라동(13) · 삼가동(14) (남은 예산 10,166,667) | 위 조건 `status='예산 밖' ORDER BY plan_rank` |
+| 연간 1안 투입 순서 | 구성동 → 모현읍 → 동천동 → 포곡읍 → 신봉동 → 이동읍 | 위와 같음, `plan=1` |
+| 연간 3안 9-2 지도 | 38개: category DRT 6 (모현읍·이동읍·포곡읍·동천동·양지면·구성동) / SKIPPED 8 / KEEP 9 (후보 아님 KEEP 8 + 현행 유지 영덕2동 1) / NONE 15 (후보 아님 BUS 14·DRT 1) / BUS 0 / HAPPY_TAXI 0, status INCLUDED 6 / SKIPPED 8 / NOT_CANDIDATE 24 | `SELECT status, mode, COUNT(*) FROM plan_region WHERE year=2025 AND month IS NULL AND plan=3 AND unit='dong' GROUP BY status, mode` |
+| 연간 days / 3안 score | 세 안 모두 days 61 (39행 모두 61) / 3안 투입 1번 모현읍 64.7 → 65, 예산 밖 남사읍 61.5 → 62 | `SELECT plan, days FROM plan_summary WHERE year=2025 AND month IS NULL`, `SELECT region_nm, status, score_total FROM plan_region WHERE year=2025 AND month IS NULL AND plan=3 AND unit='dong' AND status IN ('포함','예산 밖')` |
 | 키 중복 | (year, month, plan, unit, region_cd) 4,290행 중복 0 | `SELECT COUNT(*), COUNT(DISTINCT year, COALESCE(month,0), plan, unit, region_cd) FROM plan_region` |
 
 확인 사실 (12일자 DB, 2025, dong, 덤프에서 전 기간·전 안 대조)

@@ -623,7 +623,7 @@ regions·skipped 항목
 | action, cost | `action`(투입안 문구), `cost`(원) |
 | budgetLeftAtSkip | `budget_left_at_skip` (원). skipped만, "남은 예산 n억보다 커서 건너뜀"용 |
 
-- `status = '후보 아님'` 행은 regions·skipped에 넣지 않는다 (지도는 9-2)
+- `status = '후보 아님'`·`'현행 유지'` 행은 regions·skipped에 넣지 않는다 (지도는 9-2)
 - 금액은 모두 원 단위 정수, 변환·반올림하지 않는다
 - 예산은 안마다 `plans[].budget`으로 내린다 (지금은 세 안이 같은 값. 예산 칩은 프론트가 아무 안의 값이나 쓴다)
 - 문구(`desc`, `sortBasis`, `action`)는 수정하지 않고 그대로 전달한다
@@ -653,7 +653,7 @@ regions·skipped 항목
 | regions | 그 안의 행정동 전체(`후보 아님` 포함, 38개), `region_cd` 오름차순 |
 | regionCode | `region_cd` |
 | category, categoryName | 서버가 `status`와 `mode`로 계산한 범례 값 (아래 표). `categoryName`은 고정 문구 (DB `mode_nm` 아님) |
-| status | `status`. `포함` → `INCLUDED`, `예산 밖` → `SKIPPED`, `후보 아님` → `NOT_CANDIDATE`. 그 밖의 값은 500 `INTERNAL_ERROR` (서버 로그) |
+| status | `status`. `포함` → `INCLUDED`, `예산 밖` → `SKIPPED`, `후보 아님`·`현행 유지` → `NOT_CANDIDATE`. 그 밖의 값은 500 `INTERNAL_ERROR` (서버 로그) |
 
 category 계산 (`status`를 먼저 보고 `mode`를 본다)
 
@@ -663,11 +663,11 @@ category 계산 (`status`를 먼저 보고 `mode`를 본다)
 | `DRT` | 똑버스 | `포함` + mode `DRT` |
 | `HAPPY_TAXI` | 행복택시 | `포함` + mode `HAPPY_TAXI` |
 | `SKIPPED` | 예산 밖 | `예산 밖` |
-| `KEEP` | 현행 유지 | `후보 아님` + mode `KEEP` |
-| `NONE` | 기타 미포함 | `후보 아님` + 그 밖의 mode |
+| `KEEP` | 현행 유지 | `후보 아님`·`현행 유지` + mode `KEEP` |
+| `NONE` | 기타 미포함 | `후보 아님`·`현행 유지` + 그 밖의 mode |
 
 - `포함`인데 mode가 `BUS`·`DRT`·`HAPPY_TAXI`가 아니면 500 `INTERNAL_ERROR` (서버 로그)
-- `후보 아님` 행에도 mode에 `BUS`·`DRT` 값이 있어 mode만 보면 잘못 칠한다. 그래서 서버가 `category`로 내린다. DB `status`에는 `현행 유지` 값이 없어 KEEP은 mode로 판단한다
+- `후보 아님` 행에도 mode에 `BUS`·`DRT` 값이 있어 mode만 보면 잘못 칠한다. 그래서 서버가 `category`로 내린다. KEEP은 status가 아니라 mode로 판단한다. 11/14 DB부터 status `현행 유지`(mode `KEEP`)가 있으나 `후보 아님`과 같이 `NOT_CANDIDATE`로 내린다 (decisions D18)
 - DB `mode`·`mode_nm`은 내리지 않는다
 
 화면
