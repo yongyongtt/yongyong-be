@@ -30,6 +30,7 @@ public class PlanService {
   private static final String INCLUDED_STATUS = "포함";
   private static final String SKIPPED_STATUS = "예산 밖";
   private static final String NOT_CANDIDATE_STATUS = "후보 아님";
+  private static final String KEEP_STATUS = "현행 유지";
   private static final Map<String, String> INCLUDED_CATEGORIES =
       Map.of("BUS", "노선버스", "DRT", "똑버스", "HAPPY_TAXI", "행복택시");
 
@@ -183,7 +184,8 @@ public class PlanService {
     if (SKIPPED_STATUS.equals(status)) {
       return "SKIPPED";
     }
-    if (NOT_CANDIDATE_STATUS.equals(status)) {
+    // 현행 유지도 후보 아님과 같이 내리고 KEEP은 mode로 칠한다 (D18 11/14 변경)
+    if (NOT_CANDIDATE_STATUS.equals(status) || KEEP_STATUS.equals(status)) {
       return "NOT_CANDIDATE";
     }
     throw new IllegalStateException("알 수 없는 통합 최적안 상태입니다: " + status);

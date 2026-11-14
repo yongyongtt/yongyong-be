@@ -213,7 +213,7 @@ API 하나당 최소 아래 세 종류를 만든다.
 
 - API 8은 repository 대신 client 테스트(`MockRestServiceServer`)로 FastAPI 응답(202·200·409·422·500, 연결 실패)이 우리 응답·에러로 바뀌는지 본다. 테스트에서 실제 FastAPI를 호출하지 않는다 (실행하면 `ml_` 덮어쓰기와 LLM 사용이 생김)
 
-- seed: `src/test/resources/db/seed-dong-2025.sql` (11/11 최종본 DB에서 행정동만 추린 것, 연간 NULL 행 포함). 공개 저장소라 git에 올리지 않는다 (decisions D11)
+- seed: `src/test/resources/db/seed-dong-2025.sql` (11/14 DB에서 행정동만 추린 것, 연간 NULL 행 포함. 11/14 DB는 11/11 최종본과 `plan_` 2개 테이블만 다르다). 공개 저장소라 git에 올리지 않는다 (decisions D11)
 - `@DataJpaTest` repository 테스트에는 `@Tag("db")`를 붙인다. CI는 `-PexcludeTags=db`로 이 태그를 빼고 돌고, 로컬 `./gradlew test`는 전부 돈다. CI가 repository 테스트를 대신 돌려주지 않으므로 PR 전에 로컬에서 전체 테스트를 통과시킨다
 - 컨테이너 DB 이름은 `yongin`으로 만든다 (`.withDatabaseName("yongin")`). 엔티티가 `catalog = "yongin"`, `@Subselect`가 `yongin.ml_priority`를 가리키기 때문
 - MariaDB 컨테이너는 테스트 전체가 하나를 같이 쓴다 (`MariaDbTestSupport`의 static 컨테이너 하나). 테스트 클래스마다 새로 띄우지 않는다
